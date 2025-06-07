@@ -47,6 +47,7 @@ Thumbs.db
 *.p12
 *.pem
 .snowflake/
+sf_config.py
 
 # Pytest cache
 .pytest_cache/
