@@ -1,0 +1,55 @@
+# Byte-compiled / cache files
+__pycache__/
+*.py[cod]
+*.so
+*.ipynb_checkpoints
+
+# Virtual environments
+.env/
+.venv/
+env/
+venv/
+pip-wheel-metadata/
+
+# Environment variable files
+*.env
+.env.*
+
+# Data files
+storage/raw/
+storage/processed/
+*.csv
+*.json
+*.parquet
+*.db
+*.sqlite
+
+# Logs and outputs
+*.log
+*.out
+
+# Databricks workspace exports
+*.dbc
+.dbc/
+
+# Mac/Linux/Windows OS junk
+.DS_Store
+Thumbs.db
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# IDE config (optional)
+.vscode/
+.idea/
+
+# Snowflake config (if saved locally)
+*.p12
+*.pem
+.snowflake/
+
+# Pytest cache
+.pytest_cache/
+
+# Notebook metadata (optional)
+.ipynb_metadata/
