@@ -16,8 +16,9 @@ pip-wheel-metadata/
 .env.*
 
 # Data files
-storage/raw/
-storage/processed/
+stock_pipeline/storage/raw/
+stock_pipeline/storage/processed/
+stock_pipeline/logs
 *.csv
 *.json
 *.parquet

@@ -2,61 +2,53 @@ import os
 import requests
 import pandas as pd
 import logging
-import time
-from datetime import datetime, date, timedelta
+import subprocess
+from datetime import datetime
 from dotenv import load_dotenv
+from pathlib import Path
 
+# Load environment variables
 load_dotenv()
 api_key = os.getenv("POLYGON_API_KEY")
 
-# setup global logging
+# Logging setup
 logging.basicConfig(
-        filename="C:/E2E-Stock-Data-Pipeline/stock_pipeline/logs/ingestion.log",
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s"
-        )
+    filename="stock_pipeline/logs/ingestion.log",
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
 logging.getLogger().addHandler(logging.StreamHandler())
 
-tickers = ["AAPL", "MSFT", "TSLA", "GOOGL", "NVDA"]
-from_date = "2020-01-01"
-to_date = datetime.today().strftime("%Y-%m-%d")
+TICKERS = ["AAPL", "MSFT", "TSLA", "GOOGL", "NVDA"]
+FROM_DATE = "2020-01-01"
+TO_DATE = datetime.today().strftime("%Y-%m-%d")
 
-def fetch_and_save(symbol):
+LOCAL_DIR = Path("stock_pipeline/storage/raw")
+DBFS_DIR = "dbfs:/FileStore/stock_pipeline"
 
-    # Configure API Call
+def fetch_and_save(symbol: str) -> Path | None:
     url = (
-    f"https://api.polygon.io/v2/aggs/ticker/{symbol}/range/1/day/"
-    f"{from_date}/{to_date}?adjusted=true&sort=asc&limit=50000&apiKey={api_key}"
+        f"https://api.polygon.io/v2/aggs/ticker/{symbol}/range/1/day/"
+        f"{FROM_DATE}/{TO_DATE}?adjusted=true&sort=asc&limit=50000&apiKey={api_key}"
     )
 
-
     try:
-        # Call the API to get JSON
-        response = requests.get(url)
-        data = response.json()
+        res = requests.get(url)
+        res.raise_for_status()
+        data = res.json()
 
-        # Basic QA check: is the "results" key present
         if "results" not in data:
-            logging.error(f"❌ Error for {symbol}: {data}")
+            logging.error(f"❌ Missing 'results' for {symbol}: {data}")
             return None
 
         df = pd.DataFrame(data["results"])
         df["timestamp"] = pd.to_datetime(df["t"], unit="ms")
-
-        df = df.rename(columns={
-            "o": "open",
-            "h": "high",
-            "l": "low",
-            "c": "close",
-            "v": "volume"
-        })
-
+        df = df.rename(columns={"o": "open", "h": "high", "l": "low", "c": "close", "v": "volume"})
         df = df[["timestamp", "open", "high", "low", "close", "volume"]]
         df["symbol"] = symbol
 
-        # Example: reject if volume = 0 or rows < 10
         if df["volume"].sum() == 0 or len(df) < 10:
-            logging.warning(f"⚠️ Skipping {symbol}: suspicious data")
+            logging.warning(f"⚠️ Skipping {symbol}: empty or invalid data")
             return None
 
         df = df.astype({
@@ -69,22 +61,26 @@ def fetch_and_save(symbol):
             "symbol": "string"
         })
 
-        print(df.head)
+        LOCAL_DIR.mkdir(parents=True, exist_ok=True)
+        path = LOCAL_DIR / f"{symbol}_daily_full.parquet"
+        df.to_parquet(path, index=False, engine="pyarrow", coerce_timestamps="ms")
+        logging.info(f"✅ {symbol} saved to {path}")
+        return path
 
-        filename = f"C:/E2E-Stock-Data-Pipeline/stock_pipeline/storage/raw/{symbol}_daily_full.parquet"
-
-        df.to_parquet(filename, index=False, engine="pyarrow", coerce_timestamps="ms")
-
-        logging.info(f"✅ Saved {symbol} to {filename}")
-
-        return filename
-    
     except Exception as e:
         logging.exception(f"❌ {symbol}: Exception occurred")
         return None
-    
-# Loop through tickers
-for symbol in tickers:
-    fetch_and_save(symbol)
-    
 
+def upload_to_dbfs(local_path: Path):
+    remote_path = f"{DBFS_DIR}/{local_path.name}"
+    try:
+        subprocess.run(["databricks", "fs", "cp", str(local_path), remote_path, "--overwrite"], check=True)
+        logging.info(f"🚀 Uploaded to {remote_path}")
+    except subprocess.CalledProcessError:
+        logging.error(f"❌ Failed to upload {local_path} to DBFS")
+
+if __name__ == "__main__":
+    for ticker in TICKERS:
+        path = fetch_and_save(ticker)
+        if path:
+            upload_to_dbfs(path)
