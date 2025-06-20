@@ -76,11 +76,20 @@ def fetch_and_save(symbol: str) -> Path | None:
 
 def upload_to_dbfs(local_path: Path):
     remote_path = f"{DBFS_DIR}/{local_path.name}"
+    databricks_config_path = os.path.expanduser("~/.databricks/config")
+    env = os.environ.copy()
+    env["DATABRICKS_CONFIG_FILE"] = databricks_config_path
+
     try:
-        subprocess.run(["databricks", "fs", "cp", str(local_path), remote_path, "--overwrite"], check=True)
+        subprocess.run(
+            ["databricks", "fs", "cp", str(local_path), remote_path, "--overwrite"],
+            check=True,
+            env=env
+        )
         logging.info(f"🚀 Uploaded to {remote_path}")
-    except subprocess.CalledProcessError:
-        logging.error(f"❌ Failed to upload {local_path} to DBFS")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"❌ Failed to upload {local_path} to DBFS: {e}")
+
 
 if __name__ == "__main__":
     for ticker in TICKERS:
