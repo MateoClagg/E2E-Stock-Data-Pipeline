@@ -11,6 +11,9 @@ from pathlib import Path
 load_dotenv()
 api_key = os.getenv("POLYGON_API_KEY")
 
+# Make logging directory if needed
+os.makedirs("stock_pipeline/logs", exist_ok=True)
+
 # Logging setup
 logging.basicConfig(
     filename="stock_pipeline/logs/ingestion.log",
