@@ -26,5 +26,12 @@ jobs:
     - name: Create .env file from secret
       run: echo "POLYGON_API_KEY=${{ secrets.POLYGON_API_KEY }}" > .env
 
+    - name: Install Databricks CLI
+      run: |
+        pip install databricks-cli
+        mkdir -p ~/.databricks
+        echo -e "[DEFAULT]\nhost = ${{ secrets.DATABRICKS_HOST }}\ntoken = ${{ secrets.DATABRICKS_TOKEN }}" > ~/.databricks/config
+    
+
     - name: Run ingestion script
-      run: python stock_pipeline/ingestion.py
+      run: python stock_pipeline/ingestion/polygon_ingestion.py
