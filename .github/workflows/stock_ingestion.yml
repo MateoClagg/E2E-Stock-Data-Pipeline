@@ -34,4 +34,4 @@ jobs:
     
 
     - name: Run ingestion script
-      run: python stock_pipeline/ingestion/polygon_ingestion.py
+      run: python stock_pipeline/ingestion/polygon_ingest.py
