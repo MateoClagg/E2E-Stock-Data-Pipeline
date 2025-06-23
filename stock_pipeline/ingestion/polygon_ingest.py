@@ -27,7 +27,7 @@ FROM_DATE = "2020-01-01"
 TO_DATE = datetime.today().strftime("%Y-%m-%d")
 
 LOCAL_DIR = Path("stock_pipeline/storage/raw")
-DBFS_DIR = "dbfs:/FileStore/stock_pipeline"
+DBFS_DIR = "dbfs:/FileStore/shared_uploads/mateo.clagg@gmail.com/stock_pipeline"
 
 def fetch_and_save(symbol: str) -> Path | None:
     url = (
@@ -65,7 +65,8 @@ def fetch_and_save(symbol: str) -> Path | None:
         })
 
         LOCAL_DIR.mkdir(parents=True, exist_ok=True)
-        path = LOCAL_DIR / f"{symbol}_daily_full.parquet"
+        
+        path = LOCAL_DIR / TO_DATE / f"/{symbol}_daily_full.parquet"
         df.to_parquet(path, index=False, engine="pyarrow", coerce_timestamps="ms")
         logging.info(f"✅ {symbol} saved to {path}")
         return path
@@ -74,25 +75,8 @@ def fetch_and_save(symbol: str) -> Path | None:
         logging.exception(f"❌ {symbol}: Exception occurred")
         return None
 
-def upload_to_dbfs(local_path: Path):
-    remote_path = f"{DBFS_DIR}/{local_path.name}"
-    databricks_config_path = os.path.expanduser("~/.databricks/config")
-    env = os.environ.copy()
-    env["DATABRICKS_CONFIG_FILE"] = databricks_config_path
-
-    try:
-        subprocess.run(
-            ["databricks", "fs", "cp", str(local_path), remote_path, "--overwrite"],
-            check=True,
-            env=env
-        )
-        logging.info(f"🚀 Uploaded to {remote_path}")
-    except subprocess.CalledProcessError as e:
-        logging.error(f"❌ Failed to upload {local_path} to DBFS: {e}")
-
 
 if __name__ == "__main__":
     for ticker in TICKERS:
         path = fetch_and_save(ticker)
-        if path:
-            upload_to_dbfs(path)
+        
