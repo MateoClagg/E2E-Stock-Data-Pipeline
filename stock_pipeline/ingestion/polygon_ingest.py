@@ -63,7 +63,7 @@ def fetch_and_save(symbol: str) -> Path | None:
             "symbol": "string"
         })
 
-        LOCAL_DIR.mkdir(parents=True, exist_ok=True)
+        (LOCAL_DIR / TO_DATE).mkdir(parents=True, exist_ok=True)
         
         path = LOCAL_DIR / TO_DATE / f"{symbol}_daily_full.parquet"
         df.to_parquet(path, index=False, engine="pyarrow", coerce_timestamps="ms")
