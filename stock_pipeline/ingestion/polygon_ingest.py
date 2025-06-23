@@ -27,7 +27,6 @@ FROM_DATE = "2020-01-01"
 TO_DATE = datetime.today().strftime("%Y-%m-%d")
 
 LOCAL_DIR = Path("stock_pipeline/storage/raw")
-DBFS_DIR = "dbfs:/FileStore/shared_uploads/mateo.clagg@gmail.com/stock_pipeline"
 
 def fetch_and_save(symbol: str) -> Path | None:
     url = (
@@ -66,7 +65,7 @@ def fetch_and_save(symbol: str) -> Path | None:
 
         LOCAL_DIR.mkdir(parents=True, exist_ok=True)
         
-        path = LOCAL_DIR / TO_DATE / f"/{symbol}_daily_full.parquet"
+        path = LOCAL_DIR / TO_DATE / f"{symbol}_daily_full.parquet"
         df.to_parquet(path, index=False, engine="pyarrow", coerce_timestamps="ms")
         logging.info(f"✅ {symbol} saved to {path}")
         return path
