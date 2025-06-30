@@ -37,6 +37,8 @@ jobs:
     - name: Run ingestion script
       run: python stock_pipeline/ingestion/polygon_ingest.py
 
-    - name: Upload files to S3
+    - name: Upload only today's folder to S3 (CST adjusted)
       run: |
-        aws s3 cp stock_pipeline/storage/raw/ s3://e2e-stock-pipeline-data/stock_pipeline/raw/ --recursive
+        CST_DATE=$(date -u -d '6 hours ago' +'%Y-%m-%d')
+        aws s3 cp stock_pipeline/storage/raw/$CST_DATE/ s3://e2e-stock-pipeline-data/stock_pipeline/raw/$CST_DATE/ --recursive
+    

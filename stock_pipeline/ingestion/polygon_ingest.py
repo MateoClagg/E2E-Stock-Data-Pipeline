@@ -6,6 +6,7 @@ import subprocess
 from datetime import datetime
 from dotenv import load_dotenv
 from pathlib import Path
+from datetime import timedelta
 
 # Load environment variables
 load_dotenv()
@@ -24,7 +25,7 @@ logging.getLogger().addHandler(logging.StreamHandler())
 
 TICKERS = ["AAPL", "MSFT", "TSLA", "GOOGL", "NVDA"]
 FROM_DATE = "2020-01-01"
-TO_DATE = datetime.today().strftime("%Y-%m-%d")
+TO_DATE = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d")
 
 LOCAL_DIR = Path("stock_pipeline/storage/raw")
 
