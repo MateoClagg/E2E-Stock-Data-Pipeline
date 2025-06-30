@@ -44,7 +44,10 @@ def fetch_and_save(symbol: str) -> Path | None:
             return None
 
         df = pd.DataFrame(data["results"])
-        df["timestamp"] = pd.to_datetime(df["t"], unit="ms", origin="unix", errors="coerce")
+
+        df["timestamp"] = pd.to_datetime(df["t"], unit="ms", origin="unix", errors="raise")
+        df.drop(columns="t", inplace=True)
+
         df = df.rename(columns={"o": "open", "h": "high", "l": "low", "c": "close", "v": "volume"})
         df = df[["timestamp", "open", "high", "low", "close", "volume"]]
         df["symbol"] = symbol
@@ -63,10 +66,12 @@ def fetch_and_save(symbol: str) -> Path | None:
             "symbol": "string"
         })
 
+        print(df["timestamp"].min(), df["timestamp"].max())
+
         (LOCAL_DIR / TO_DATE).mkdir(parents=True, exist_ok=True)
         
         path = LOCAL_DIR / TO_DATE / f"{symbol}_daily_full.parquet"
-        df.to_parquet(path, index=False, engine="pyarrow", coerce_timestamps="ms")
+        df.to_parquet(path, index=False, engine="pyarrow")
         logging.info(f"✅ {symbol} saved to {path}")
         return path
 
