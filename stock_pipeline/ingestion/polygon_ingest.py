@@ -44,7 +44,7 @@ def fetch_and_save(symbol: str) -> Path | None:
             return None
 
         df = pd.DataFrame(data["results"])
-        df["timestamp"] = pd.to_datetime(df["t"], unit="ms")
+        df["timestamp"] = pd.to_datetime(df["t"], unit="ms", origin="unix", errors="coerce")
         df = df.rename(columns={"o": "open", "h": "high", "l": "low", "c": "close", "v": "volume"})
         df = df[["timestamp", "open", "high", "low", "close", "volume"]]
         df["symbol"] = symbol
