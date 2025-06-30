@@ -72,8 +72,11 @@ def fetch_and_save(symbol: str) -> Path | None:
         (LOCAL_DIR / TO_DATE).mkdir(parents=True, exist_ok=True)
         
         path = LOCAL_DIR / TO_DATE / f"{symbol}_daily_full.parquet"
+        df["timestamp"] = df["timestamp"].dt.strftime('%Y-%m-%d %H:%M:%S')
         df.to_parquet(path, index=False, engine="pyarrow")
         logging.info(f"✅ {symbol} saved to {path}")
+        print(df.dtypes)
+        print(df.head(3))
         return path
 
     except Exception as e:
