@@ -22,7 +22,8 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install awscli  # AWS CLI installed via pip is often more up to date
+        pip install snowflake-connector-python
+        pip install awscli  
 
     - name: Create .env file from secret
       run: echo "POLYGON_API_KEY=${{ secrets.POLYGON_API_KEY }}" > .env
@@ -35,10 +36,24 @@ jobs:
         echo "aws_secret_access_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> ~/.aws/credentials
 
     - name: Run ingestion script
-      run: python stock_pipeline/ingestion/polygon_ingest.py
+      run: python stock_pipeline/scripts/polygon_ingest.py
 
-    - name: Upload only today's folder to S3 (CST adjusted)
+    - name: Upload daily folder to S3
       run: |
         CST_DATE=$(date -u -d '6 hours ago' +'%Y-%m-%d')
-        aws s3 cp stock_pipeline/storage/raw/$CST_DATE/ s3://e2e-stock-pipeline-data/stock_pipeline/raw/$CST_DATE/ --recursive
+        aws s3 cp stock_pipeline/daily/$CST_DATE/ s3://e2e-stock-pipeline-data/stock_pipeline/daily/$CST_DATE/ --recursive
     
+    - name: Clean up old local folders after S3 archival
+      run: |
+        python stock_pipeline/scripts/archive_and_cleanup.py
+    
+    - name: Trigger Snowflake ingestion
+      env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+          SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+          SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+      run: |
+          python stock_pipeline/scripts/trigger_snowflake.py
