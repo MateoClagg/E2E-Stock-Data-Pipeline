@@ -19,7 +19,7 @@ pip-wheel-metadata/
 stock_pipeline/storage/raw/
 stock_pipeline/storage/processed/
 stock_pipeline/logs
-*.csv
+#*.csv
 *.json
 *.parquet
 *.db
@@ -28,6 +28,7 @@ stock_pipeline/logs
 # Logs and outputs
 *.log
 *.out
+qa_log.csv
 
 # Databricks workspace exports
 *.dbc
