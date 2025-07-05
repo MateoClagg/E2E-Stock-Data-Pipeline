@@ -40,7 +40,7 @@ jobs:
 
     - name: Upload daily folder to S3
       run: |
-        CST_DATE=$(date -u -d '6 hours ago' +'%Y-%m-%d')
+        CST_DATE=$(date -u -d '1 day ago 6 hours ago' +'%Y-%m-%d')
         aws s3 cp stock_pipeline/daily/$CST_DATE/ s3://e2e-stock-pipeline-data/stock_pipeline/daily/$CST_DATE/ --recursive
     
     - name: Clean up old local folders after S3 archival
@@ -48,6 +48,7 @@ jobs:
         python stock_pipeline/scripts/archive_and_cleanup.py
     
     - name: Trigger Snowflake ingestion
+      if: github.ref == 'refs/heads/Add-snowflake-trigger-after-S3-upload'
       env:
           SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
           SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
