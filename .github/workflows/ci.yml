@@ -1,0 +1,88 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [ main, feature/* ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.9, 3.10, 3.11]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Lint with flake8
+      run: |
+        pip install flake8
+        # Stop the build if there are Python syntax errors or undefined names
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        # Exit-zero treats all errors as warnings. Line length set to 88 (black default)
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=88 --statistics
+    
+    - name: Run unit tests
+      run: |
+        # Run tests excluding integration tests (no live API calls)
+        pytest -v -m "not integration" --tb=short
+    
+    - name: Generate test coverage
+      run: |
+        pip install pytest-cov
+        pytest --cov=ingestion --cov-report=xml -m "not integration"
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        fail_ci_if_error: false
+
+  integration-test:
+    runs-on: ubuntu-latest
+    # Only run integration tests on main branch to avoid API rate limits
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.10
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Run integration tests
+      env:
+        FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+      run: |
+        # Only run if API key is available
+        if [ -n "$FMP_API_KEY" ]; then
+          pytest -v -m "integration" --runlive --tb=short
+        else
+          echo "Skipping integration tests - FMP_API_KEY not available"
+        fi
