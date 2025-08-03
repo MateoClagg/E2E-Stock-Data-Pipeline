@@ -22,10 +22,16 @@ logging.basicConfig(
 )
 logging.getLogger().addHandler(logging.StreamHandler())
 
-# Constants
+# .env or passed in via CLI
+MODE = os.getenv("MODE", "backfill")  # or "daily"
+
+if MODE == "backfill":
+    FROM_DATE = os.getenv("FROM_DATE", "2020-01-01")
+    TO_DATE = os.getenv("TO_DATE", datetime.now(timezone.utc).strftime("%Y-%m-%d"))
+elif MODE == "daily":
+    FROM_DATE = TO_DATE = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+
 TICKER_FILE = "stock_pipeline/config/tickers.csv"  # CSV with list of tickers
-FROM_DATE = "2020-01-01"                           # Start date for data (max range = 2 years on free plan)
-TO_DATE = (datetime.now(timezone.utc) - timedelta(days=1, hours=6)).strftime("%Y-%m-%d")
 
 # Create daily output directory
 DAILY_DIR = Path(f"stock_pipeline/daily/{TO_DATE}")

@@ -1,9 +1,20 @@
-name: Daily Stock Ingestion
+name: Stock Data Ingestion
 
 on:
   schedule:
-    - cron: '0 14 * * *' # Runs every day at 8 AM CST (14 UTC)
-  workflow_dispatch:      # Allows manual triggering
+    - cron: '0 14 * * *'  # Daily at 8 AM CST
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Ingestion mode (daily or backfill)'
+        required: false
+        default: 'daily'
+      from_date:
+        description: 'Backfill start date (YYYY-MM-DD)'
+        required: false
+      to_date:
+        description: 'Backfill end date (YYYY-MM-DD)'
+        required: false
 
 jobs:
   ingest:
@@ -22,11 +33,16 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install snowflake-connector-python
         pip install awscli  
 
-    - name: Create .env file from secret
-      run: echo "POLYGON_API_KEY=${{ secrets.POLYGON_API_KEY }}" > .env
+    - name: Create .env file from inputs
+      run: |
+        echo "POLYGON_API_KEY=${{ secrets.POLYGON_API_KEY }}" > .env
+        echo "MODE=${{ github.event.inputs.mode || 'daily' }}" >> .env
+        if [ "${{ github.event.inputs.mode }}" == "backfill" ]; then
+          echo "FROM_DATE=${{ github.event.inputs.from_date }}" >> .env
+          echo "TO_DATE=${{ github.event.inputs.to_date }}" >> .env
+        fi
 
     - name: Set AWS credentials
       run: |
@@ -38,23 +54,15 @@ jobs:
     - name: Run ingestion script
       run: python stock_pipeline/scripts/polygon_ingest.py
 
-    - name: Upload daily folder to S3
+    - name: Upload folder to S3
       run: |
-        CST_DATE=$(date -u -d '1 day ago 6 hours ago' +'%Y-%m-%d')
-        aws s3 cp stock_pipeline/daily/$CST_DATE/ s3://e2e-stock-pipeline-data/stock_pipeline/daily/$CST_DATE/ --recursive
-    
-    - name: Clean up old local folders after S3 archival
+        if [ "${{ github.event.inputs.mode }}" == "backfill" ]; then
+          aws s3 cp stock_pipeline/daily/${{ github.event.inputs.to_date }}/ s3://e2e-stock-pipeline-data/stock_pipeline/backfill/${{ github.event.inputs.to_date }}/ --recursive
+        else
+          CST_DATE=$(date -u -d '1 day ago 6 hours ago' +'%Y-%m-%d')
+          aws s3 cp stock_pipeline/daily/$CST_DATE/ s3://e2e-stock-pipeline-data/stock_pipeline/daily/$CST_DATE/ --recursive
+        fi
+
+    - name: Clean up local folders
       run: |
         python stock_pipeline/scripts/archive_and_cleanup.py
-    
-    - name: Trigger Snowflake ingestion
-      if: github.ref == 'refs/heads/Add-snowflake-trigger-after-S3-upload'
-      env:
-          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
-          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
-          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
-          SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
-          SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
-          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
-      run: |
-          python stock_pipeline/scripts/trigger_snowflake.py
