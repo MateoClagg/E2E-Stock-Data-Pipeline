@@ -214,17 +214,25 @@ class TestFMPClient:
             "balance-sheet-statement/AAPL": mock_balance_data
         }
         
-        async def mock_json_response(endpoint):
-            # Return appropriate mock data based on endpoint
-            for key, value in mock_responses.items():
-                if key in str(endpoint):
-                    return value
-            return []
+        async def mock_json_response(session, endpoint, params=None):
+            # Return what _make_request would return (processed data, not raw API response)
+            endpoint_str = str(endpoint)
+            
+            if "historical-price-full" in endpoint_str:
+                return mock_price_data  # _make_request extracts ["historical"] for us
+            elif "income-statement" in endpoint_str:
+                return mock_income_data
+            elif "cash-flow-statement" in endpoint_str:
+                return mock_cashflow_data
+            elif "balance-sheet-statement" in endpoint_str:
+                return mock_balance_data
+            else:
+                return []
         
         client = AsyncFMPClient(mock_fmp_config)
         
         # Patch the _make_request method to return our mock data
-        with patch.object(client, '_make_request', side_effect=lambda session, endpoint, params=None: mock_json_response(endpoint)):
+        with patch.object(client, '_make_request', side_effect=mock_json_response):
             result = await client.fetch_all_data("AAPL", "2024-01-01", "2024-01-31")
         
         # Verify we got data for all four types
@@ -271,15 +279,14 @@ class TestFMPClient:
             "balance-sheet-statement/BADTICKER": []  # No balance data
         }
         
-        async def mock_empty_response(endpoint):
-            for key, value in mock_responses.items():
-                if key in str(endpoint):
-                    return value
-            return []
+        async def mock_empty_response(session, endpoint, params=None):
+            # Always return empty data for bad ticker test
+            # Return what _make_request would return (processed data)
+            return []  # Empty data for all endpoints
         
         client = AsyncFMPClient(mock_fmp_config)
         
-        with patch.object(client, '_make_request', side_effect=lambda session, endpoint, params=None: mock_empty_response(endpoint)):
+        with patch.object(client, '_make_request', side_effect=mock_empty_response):
             result = await client.fetch_all_data("BADTICKER", "2024-01-01", "2024-01-31")
         
         # Should still return all keys but with empty data
@@ -426,6 +433,10 @@ class TestLiveAPI:
     async def test_live_api_ford_data(self):
         # Test against Ford (F) - should be stable and have long history
         import os
+        from dotenv import load_dotenv
+        
+        # Load environment variables from .env file
+        load_dotenv()
         
         api_key = os.getenv("FMP_API_KEY")
         if not api_key:
@@ -440,38 +451,31 @@ class TestLiveAPI:
         # Should get data for all types
         assert len(result["prices"]) > 200  # About 252 trading days per year
         assert len(result["income"]) >= 1   # At least one annual report
-        assert result["prices"][0]["volume"] > 0
+        assert len(result["cashflow"]) >= 1
+        assert len(result["balance"]) >= 1
+        
+        # Validate price data structure and ranges
+        prices = result["prices"]
+        first_price = prices[0]
+        
+        # Should have full OHLCV data
+        required_price_fields = ["date", "open", "high", "low", "close", "volume", "adjClose"]
+        for field in required_price_fields:
+            assert field in first_price, f"Missing required price field: {field}"
+        
+        # Validate volume is positive
+        assert first_price["volume"] > 0
         
         # Ford should have reasonable stock price ranges
-        prices = result["prices"]
-        closes = [p["close"] for p in prices if p["close"]]
+        closes = [float(p["close"]) for p in prices if p.get("close")]
+        assert len(closes) > 0
         assert min(closes) > 5   # Ford shouldn't go below $5
         assert max(closes) < 50  # Ford shouldn't go above $50
+        
+        # Validate fundamental data has expected fields
+        assert "revenue" in result["income"][0] or "totalRevenue" in result["income"][0]
+        assert "freeCashFlow" in result["cashflow"][0] or "operatingCashFlow" in result["cashflow"][0]
+        assert "totalDebt" in result["balance"][0] or "totalAssets" in result["balance"][0]
 
 
-def pytest_addoption(parser):
-    # Add --runlive flag to enable integration tests
-    parser.addoption(
-        "--runlive", 
-        action="store_true", 
-        default=False, 
-        help="Run integration tests against live APIs"
-    )
-
-
-def pytest_configure(config):
-    # Register the integration marker
-    config.addinivalue_line(
-        "markers", "integration: mark test as integration test requiring live API"
-    )
-
-
-def pytest_collection_modifyitems(config, items):
-    # Skip integration tests unless --runlive is specified
-    if config.getoption("--runlive"):
-        return
-    
-    skip_integration = pytest.mark.skip(reason="need --runlive option to run")
-    for item in items:
-        if "integration" in item.keywords:
-            item.add_marker(skip_integration)
+# Pytest configuration moved to conftest.py

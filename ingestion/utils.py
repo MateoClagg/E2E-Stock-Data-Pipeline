@@ -86,7 +86,7 @@ class AsyncFMPClient:
             # Fire off all four requests concurrently
             tasks = {
                 "prices": self._make_request(session, f"historical-price-full/{symbol}", 
-                                           {"from": from_date, "to": to_date, "serietype": "line"}),
+                                           {"from": from_date, "to": to_date}),
                 "income": self._make_request(session, f"income-statement/{symbol}", 
                                            {"period": "annual", "limit": 5}),
                 "cashflow": self._make_request(session, f"cash-flow-statement/{symbol}", 
