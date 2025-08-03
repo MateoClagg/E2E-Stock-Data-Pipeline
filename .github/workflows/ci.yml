@@ -47,7 +47,7 @@ jobs:
     - name: Generate test coverage
       run: |
         pip install pytest-cov
-        pytest --cov=ingestion --cov-report=xml -m "not integration"
+        pytest --cov=ingestion --cov=bronze --cov=silver --cov-report=xml -m "not integration"
     
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3

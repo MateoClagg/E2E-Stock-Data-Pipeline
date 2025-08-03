@@ -12,9 +12,12 @@ def pytest_addoption(parser):
 
 
 def pytest_configure(config):
-    """Register the integration marker."""
+    """Register custom markers."""
     config.addinivalue_line(
-        "markers", "integration: mark test as integration test requiring live API"
+        "markers", "integration: mark test as integration test requiring live API or Spark"
+    )
+    config.addinivalue_line(
+        "markers", "spark: mark test as requiring Spark session"
     )
 
 

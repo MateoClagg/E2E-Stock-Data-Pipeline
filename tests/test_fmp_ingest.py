@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import asyncio
 
 from ingestion.utils import AsyncFMPClient, FMPConfig, RateLimiter
-from ingestion.fmp_ingest import get_bronze_schemas
+from bronze.ingestion.schemas import get_bronze_schemas
 
 
 @pytest.fixture
