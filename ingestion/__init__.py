@@ -1,1 +1,0 @@
-"""E2E Stock Data Pipeline v2 - Ingestion Module."""

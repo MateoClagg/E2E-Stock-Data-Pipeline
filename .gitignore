@@ -2,57 +2,184 @@
 __pycache__/
 *.py[cod]
 *.so
-*.ipynb_checkpoints
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
 # Virtual environments
 .env/
 .venv/
 env/
 venv/
-pip-wheel-metadata/
+ENV/
+env.bak/
+venv.bak/
 
-# Environment variable files
-*.env
+# Environment configuration
+.env
 .env.*
+!.env.example
 
-# Data files
-stock_pipeline/storage/raw/
-stock_pipeline/storage/processed/
-stock_pipeline/logs
-#*.csv
-*.json
-*.parquet
-*.db
-*.sqlite
+# PyInstaller
+*.manifest
+*.spec
 
-# Logs and outputs
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Django/Flask stuff
 *.log
-*.out
-qa_log.csv
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
 
-# Databricks workspace exports
-*.dbc
-.dbc/
+# Scrapy stuff
+.scrapy
 
-# Mac/Linux/Windows OS junk
-.DS_Store
-Thumbs.db
+# Sphinx documentation
+docs/_build/
 
-# Jupyter Notebook checkpoints
-.ipynb_checkpoints/
+# PyBuilder
+.pybuilder/
+target/
 
-# IDE config (optional)
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# poetry
+poetry.lock
+
+# celery beat schedule file
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# IDEs
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
 
-# Snowflake config (if saved locally)
-*.p12
-*.pem
-.snowflake/
-sf_config.py
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 
-# Pytest cache
-.pytest_cache/
+# Data files (keep some examples)
+*.csv
+*.json
+*.parquet
+*.avro
+*.orc
+!bronze/tickers.csv
+!validation/expectations_*.json
 
-# Notebook metadata (optional)
-.ipynb_metadata/
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Log files
+*.log
+logs/
+*.out
+
+# Temporary files
+temp/
+tmp/
+*.tmp
+
+# Databricks
+*.dbc
+.databricks/
+
+# Spark
+spark-warehouse/
+derby.log
+metastore_db/
+
+# AWS / Cloud credentials
+.aws/
+credentials
+config
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# setuptools_scm version file
+stock_pipeline/_version.py
+
+# Personal documentation
+docs/personal/

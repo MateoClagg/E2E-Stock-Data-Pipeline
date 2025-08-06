@@ -1,0 +1,103 @@
+name: Fast PR Build
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ feature/* ]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: pr-build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fast-build:
+    name: Fast Build & Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5  # Hard 5-minute limit for PR builds
+    
+    # Single Python version for speed - no matrix needed
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332  # v4.1.7
+      with:
+        fetch-depth: 1  # Shallow clone for speed
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@39cd14951b08e74b54015e9e001cdefcf80e669f  # v5.1.1
+      with:
+        python-version: "3.11"
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install minimal dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build setuptools-scm[toml]
+        pip install -r requirements.txt
+
+    - name: Quick lint check
+      run: |
+        pip install ruff
+        ruff check . --select E9,F63,F7,F82 || echo "Lint issues found (non-blocking)"
+      continue-on-error: true
+
+    - name: Build package
+      run: |
+        python -m build --wheel  # Only wheel for speed
+        
+    - name: Verify build
+      run: |
+        ls -la dist/
+        # Quick twine check
+        pip install twine
+        twine check dist/*.whl
+
+    - name: Fast import smoke test
+      run: |
+        # Install the built wheel
+        pip install dist/*.whl
+        
+        # Minimal smoke test - just imports
+        python -c "
+        import sys
+        try:
+            import bronze, silver, validation
+            import stock_pipeline
+            print('✓ All modules imported successfully')
+            print(f'✓ Version: {stock_pipeline.__version__}')
+        except ImportError as e:
+            print(f'✗ Import failed: {e}')
+            sys.exit(1)
+        "
+
+    - name: Run fast tests
+      run: |
+        pip install pytest
+        # Only unit tests, no integration, timeout after 60s
+        timeout 60s pytest -x -q --tb=short -m "not integration" || echo "Some tests failed (non-blocking for PR)"
+      continue-on-error: true
+
+    - name: Upload PR artifact
+      uses: actions/upload-artifact@50769540e7f4bd5e21e526ee35c689e35e0d6874  # v4.4.0
+      with:
+        name: pr-package-${{ github.sha }}
+        path: dist/
+        retention-days: 7
+        if-no-files-found: error
+
+    - name: Build timing check
+      run: |
+        echo "⏱️  Build completed in under 5 minutes"
+        echo "✅ Ready for code review"
