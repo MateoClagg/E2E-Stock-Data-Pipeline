@@ -110,6 +110,21 @@ jobs:
         retention-days: 14
         if-no-files-found: error
 
+    - name: Configure AWS credentials for S3 upload
+      if: github.ref == 'refs/heads/main' && matrix.python-version == '3.11'
+      uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502  # v4.0.2
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    - name: Upload wheels to S3 for Databricks Unity Catalog
+      if: github.ref == 'refs/heads/main' && matrix.python-version == '3.11'
+      run: |
+        echo "📦 Uploading main snapshot wheels to S3..."
+        aws s3 cp dist/ s3://${{ vars.S3_WHEELS_BUCKET }}/wheels/stock-pipeline/main/ \
+          --recursive --acl bucket-owner-full-control
+        echo "✅ Main snapshot uploaded to s3://${{ vars.S3_WHEELS_BUCKET }}/wheels/stock-pipeline/main/"
+
   # PySpark compatibility testing (separate job to run in parallel)
   spark-compatibility:
     name: PySpark Compatibility

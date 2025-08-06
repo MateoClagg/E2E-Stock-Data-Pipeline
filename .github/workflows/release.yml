@@ -31,12 +31,12 @@ jobs:
         python-version: "3.11"
 
     - name: Cache pip dependencies
-      uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9  # v4.0.2
+      uses: actions/cache@v4
       with:
         path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-release-${{ hashFiles('**/pyproject.toml', '**/requirements*.txt') }}
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
         restore-keys: |
-          ${{ runner.os }}-pip-release-
+          ${{ runner.os }}-pip-
 
     - name: Install release dependencies
       run: |
@@ -141,18 +141,27 @@ jobs:
         twine upload --repository codeartifact dist/*
         echo "✓ Successfully published to CodeArtifact"
 
-    - name: Copy wheel to S3 (optional)
+    - name: Upload wheels to S3 for Databricks Unity Catalog
       if: vars.S3_WHEELS_BUCKET != ''
       run: |
-        PACKAGE_NAME="stock-pipeline"
-        VERSION="${{ steps.version.outputs.version }}"
+        VERSION="${{ steps.guardrails.outputs.version }}"
+        S3_PATH="s3://${{ vars.S3_WHEELS_BUCKET }}/wheels/stock-pipeline/${VERSION}/"
         
-        # Upload all wheels to S3
-        for wheel in dist/*.whl; do
-          aws s3 cp "$wheel" "s3://${{ vars.S3_WHEELS_BUCKET }}/wheels/${PACKAGE_NAME}/${VERSION}/"
-        done
+        # Safety check: Prevent overwriting existing releases
+        if aws s3 ls "${S3_PATH}" --recursive | grep -q "\.whl"; then
+          echo "🚨 SAFETY CHECK: Release ${VERSION} already exists in S3"
+          echo "   Path: ${S3_PATH}"
+          echo "   Existing wheels found - refusing to overwrite."
+          echo "   If this is intentional, manually delete the S3 path first."
+          exit 1
+        fi
         
-        echo "✓ Wheels copied to S3: s3://${{ vars.S3_WHEELS_BUCKET }}/wheels/${PACKAGE_NAME}/${VERSION}/"
+        echo "📦 Uploading release wheels to S3..."
+        aws s3 cp dist/ "${S3_PATH}" \
+          --recursive --acl bucket-owner-full-control \
+          --exclude "*" --include "*.whl"
+        
+        echo "✅ Release wheels uploaded to ${S3_PATH}"
 
     - name: Print installation instructions
       run: |
