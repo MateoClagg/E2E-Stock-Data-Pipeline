@@ -53,6 +53,10 @@ jobs:
         ruff check . --statistics
       continue-on-error: true
 
+    - name: Clean previous builds
+      run: |
+        rm -rf dist/ build/ *.egg-info/
+        
     - name: Build package (wheel + sdist)
       run: |
         python -m build  # Both wheel and sdist
