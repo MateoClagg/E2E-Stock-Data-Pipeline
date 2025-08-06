@@ -6,6 +6,10 @@ import json
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Import shared utilities
 from bronze.utils import AsyncFMPClient, FMPConfig, create_spark_session, write_bronze_data
@@ -89,6 +93,8 @@ async def main():
     client = AsyncFMPClient(config)
     spark = create_spark_session()
     schemas = get_bronze_schemas()
+    
+    print(f"✅ Components initialized (run_id: {client.run_id})")
     
     # Process all tickers concurrently - rate limiting handles the API limits automatically
     tasks = [ingest_ticker_bronze(client, spark, ticker, from_date, to_date, schemas) 

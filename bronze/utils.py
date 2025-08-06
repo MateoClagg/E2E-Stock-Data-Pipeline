@@ -8,17 +8,46 @@ import aiohttp
 from pydantic import BaseModel
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.types import StructType
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 def create_spark_session() -> SparkSession:
-    return SparkSession.builder \
+    import platform
+    import tempfile
+    
+    # Windows-specific setup to avoid winutils.exe issues
+    if platform.system() == "Windows":
+        # Set HADOOP_HOME to temp directory if not set
+        if not os.getenv('HADOOP_HOME'):
+            temp_hadoop = os.path.join(tempfile.gettempdir(), "hadoop")
+            os.makedirs(temp_hadoop, exist_ok=True)
+            os.environ['HADOOP_HOME'] = temp_hadoop
+    
+    builder = SparkSession.builder \
         .appName("FMP-Stock-Ingestion") \
+        .config("spark.driver.memory", "2g") \
+        .config("spark.driver.maxResultSize", "1g") \
+        .config("spark.jars.packages", "org.apache.hadoop:hadoop-aws:3.3.4") \
         .config("spark.hadoop.fs.s3a.access.key", os.getenv("AWS_ACCESS_KEY_ID")) \
         .config("spark.hadoop.fs.s3a.secret.key", os.getenv("AWS_SECRET_ACCESS_KEY")) \
         .config("spark.hadoop.fs.s3a.endpoint", "s3.amazonaws.com") \
+        .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
+        .config("spark.hadoop.fs.s3a.aws.credentials.provider", "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider") \
         .config("spark.sql.adaptive.enabled", "true") \
         .config("spark.sql.adaptive.coalescePartitions.enabled", "true") \
-        .getOrCreate()
+        .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+    
+    # Additional Windows-specific configurations 
+    if platform.system() == "Windows":
+        builder = builder \
+            .config("spark.hadoop.fs.file.impl", "org.apache.hadoop.fs.LocalFileSystem") \
+            .config("spark.sql.warehouse.dir", "file:///C:/temp/spark-warehouse") \
+            .config("spark.hadoop.io.compression.codecs", "org.apache.hadoop.io.compress.GzipCodec,org.apache.hadoop.io.compress.DefaultCodec")
+    
+    return builder.getOrCreate()
 
 
 def write_bronze_data(spark: SparkSession, data: List[Dict], schema: StructType, 
@@ -40,7 +69,8 @@ def write_bronze_data(spark: SparkSession, data: List[Dict], schema: StructType,
     df = spark.createDataFrame(enriched_data, schema)
     
     # Write to S3 with symbol and date partitioning for efficient queries
-    s3_path = f"s3a://{os.getenv('S3_BUCKET_BRONZE')}/{table_type}_raw/"
+    bucket = os.getenv('S3_BUCKET_BRONZE')
+    s3_path = f"s3a://{bucket}/{table_type}_raw/"
     
     df.write \
         .mode("overwrite") \

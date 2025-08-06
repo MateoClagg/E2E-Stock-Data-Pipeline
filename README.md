@@ -1,131 +1,167 @@
-# E2E Stock Data Pipeline
+# 📊 E2E Stock Data Pipeline
 
-Production-ready data pipeline that ingests financial data from FMP API, processes it through 
-Bronze→Silver→Gold medallion architecture, and delivers analytics-ready datasets. Combines 
-daily OHLCV price data with annual fundamental metrics for comprehensive equity analysis.
+[![Build Status](../../actions/workflows/pr-build.yml/badge.svg)](../../actions/workflows/pr-build.yml)
+[![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Code style: ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
-[![CI Pipeline](https://github.com/MateoClagg/E2E-Stock-Data-Pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/MateoClagg/E2E-Stock-Data-Pipeline/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/MateoClagg/E2E-Stock-Data-Pipeline/branch/main/graph/badge.svg)](https://codecov.io/gh/MateoClagg/E2E-Stock-Data-Pipeline)
+> **Enterprise-grade financial data pipeline** for ingesting, processing, and analyzing stock market data using the Medallion Architecture on Databricks.
 
-## Architecture
+## 🎯 **Overview**
 
+This pipeline provides a complete end-to-end solution for financial data processing:
+
+- **🥉 Bronze Layer**: Raw data ingestion from Financial Modeling Prep API with automated S3 storage
+- **🥈 Silver Layer**: Data cleaning, transformations, and validity windows for time-series analysis  
+- **🥇 Gold Layer**: Analytical views combining price and fundamental data
+- **🔍 Validation**: Data quality monitoring with Great Expectations
+- **🚀 CI/CD**: Automated testing, packaging, and deployment to Databricks
+
+## ✨ **Key Features**
+
+- **📈 Multi-source Data**: Price data, income statements, cash flow, and balance sheets
+- **⚡ Async Processing**: Concurrent API calls with built-in rate limiting
+- **🎯 Time-series Ready**: Validity windows for point-in-time fundamental analysis
+- **☁️ Cloud Native**: Designed for Databricks with S3 integration
+- **🔒 Enterprise Security**: OIDC authentication, SBOM generation, vulnerability scanning
+- **🧪 Comprehensive Testing**: Unit tests, integration tests, and PySpark compatibility validation
+
+## 🚀 **Quick Start**
+
+```bash
+# Install the package
+pip install stock-pipeline
+
+# Set up environment variables (see GETTING_STARTED.md)
+export FMP_API_KEY="your_api_key"
+export AWS_ACCESS_KEY_ID="your_access_key"
+export S3_BUCKET_BRONZE="your-bucket-name"
+
+# Ingest data
+python -m bronze.ingestion.fmp --tickers AAPL,MSFT --backfill
+```
+
+**👉 [Complete Setup Guide](GETTING_STARTED.md)**
+
+## 🏗️ **Architecture**
+
+### **Medallion Data Flow**
 ```mermaid
-graph TD
-    A[FMP API] --> B[Bronze S3 Parquet]
-    B --> C[Silver Delta Tables]
-    C --> D[Gold Features]
-    
-    B --> E[Great Expectations]
-    C --> F[Databricks Workflows]
-    
-    style A fill:#e1f5fe
-    style B fill:#fff3e0
-    style C fill:#f3e5f5
-    style D fill:#e8f5e8
+graph LR
+    A[FMP API] --> B[Bronze Layer]
+    B --> C[Silver Layer] 
+    C --> D[Gold Layer]
+    B --> E[S3 Raw Storage]
+    C --> F[Delta Tables]
+    D --> G[Analytics Views]
 ```
 
-## Directory structure
-
+### **Package Structure**
 ```
-bronze/
-├── ingestion/
-│   ├── fmp_bronze.py
-│   └── schemas.py
-└── utils.py
-silver/
-├── transformations/
-│   ├── clean_data.py
-│   └── validity_windows.py
-└── views/
-    └── unified_views.py
-tests/
-├── test_silver_transformations.py
-├── test_silver_views.py
-└── test_fmp_ingest.py
-.github/workflows/
-└── ci.yml
+📦 stock-pipeline/
+├── 🥉 bronze/              # Raw data ingestion
+│   ├── ingestion/          # FMP API client and schemas  
+│   └── utils.py           # Spark configuration and S3 utilities
+├── 🥈 silver/              # Data transformations
+│   ├── transformations/    # Cleaning and business logic
+│   └── views/             # Unified analytical views
+├── 🔍 validation/          # Data quality (Great Expectations)
+├── 🧪 tests/              # Comprehensive test suite
+├── 📊 docs/               # Documentation by topic
+└── ⚙️ .github/workflows/   # CI/CD automation
 ```
 
-## Installing the Package
+## 📊 **Data Pipeline**
 
-> **⚠️ IMPORTANT: Package Name Mapping**  
-> **Install:** `stock-pipeline` (with hyphen)  
-> **Import:** `stock_pipeline` (with underscore) + `bronze`, `silver`, `ingestion`, `validation`
+| Layer | Purpose | Technology | Output Format |
+|-------|---------|------------|---------------|
+| **Bronze** | Raw ingestion | AsyncIO + FMP API | S3 Parquet (partitioned) |
+| **Silver** | Cleaning & transformations | PySpark + Delta | Delta Tables |
+| **Gold** | Analytics & aggregation | SQL + Views | Databricks Views |
 
-### From CodeArtifact (Production)
-```python
-# In Databricks notebook or cluster init script
-%pip install stock-pipeline==X.Y.Z --index-url https://<domain>-<account_id>.d.codeartifact.<region>.amazonaws.com/pypi/<repository>/simple/
+## 🔧 **Development**
 
-# Then import the modules
-import stock_pipeline
-import bronze, silver, ingestion, validation
-```
-
-### From Unity Catalog Volume (Alternative)
-```python
-# If wheels are copied to Unity Catalog Volumes
-%pip install /Volumes/<catalog>/<schema>/<volume>/wheels/stock-pipeline/X.Y.Z/stock_pipeline-X.Y.Z-py3-none-any.whl
-```
-
-### For Development (Editable Install)
-```python
-# In Databricks Repos or local development
-%pip install -e "."
-```
-
-### Local Development Setup
+### **Local Development**
 ```bash
-git clone https://github.com/MateoClagg/E2E-Stock-Data-Pipeline.git
+git clone <repository-url>
 cd E2E-Stock-Data-Pipeline
-python -m venv .venv && .venv\Scripts\Activate
-pip install -r requirements.txt 
-pytest -q -m "not integration"                     # unit tests
-pytest -m integration --runlive                    # live FMP tests (needs FMP_API_KEY)
+pip install -e .
+pytest tests/ -v
 ```
 
-## 📦 Package Installation & Usage
+### **CI/CD Pipeline**
+- **PR Builds**: Fast validation (≤5 min) - linting, imports, basic tests
+- **Main Builds**: Comprehensive testing (≤10 min) - full test suite, PySpark validation  
+- **Release Builds**: Production deployment - CodeArtifact publishing, security auditing
 
-> **⚠️ IMPORTANT**: Install `stock-pipeline` (hyphen) but import `stock_pipeline` + modules (underscore)
+### **Databricks Integration**
+```python
+# Auto-install from Unity Catalog Volume
+%pip install /Volumes/catalog/schema/volume/wheels/stock-pipeline/latest/
 
-### Quick Test Locally
+# Or from private CodeArtifact
+%pip install stock-pipeline --index-url <codeartifact-url>
+```
+
+## 📋 **Requirements**
+
+- **Python 3.10+**
+- **Apache Spark 3.5+** (for local development)  
+- **Databricks Runtime 13.0+** (for production)
+- **AWS S3** access for data storage
+- **FMP API subscription** for market data
+
+## 🧪 **Testing Strategy**
+
 ```bash
-pip install -e .  # Development install
-python -c "import bronze, silver, stock_pipeline; print('✅ Works!')"
+# Unit tests (fast, no external dependencies)
+pytest tests/ -m "not integration"
+
+# Integration tests (requires API keys and S3)  
+pytest tests/ -m integration
+
+# PySpark tests (validates Databricks compatibility)
+pytest tests/test_silver_* -v
 ```
 
-### Production Installation (when ready)
-See [`docs/operations/RELEASING.md`](docs/operations/RELEASING.md) for AWS CodeArtifact setup.
+## 📚 **Documentation**
 
-## 🚀 CI/CD Pipeline
+| Document | Description |
+|----------|-------------|
+| **[🚀 Getting Started](GETTING_STARTED.md)** | Installation and quick setup |
+| **[📋 Setup Requirements](SETUP_REQUIREMENTS.md)** | Complete production setup |
+| **[📊 Databricks Setup](databricks/DATABRICKS_SETUP.md)** | Unity Catalog configuration |
+| **[📚 Full Documentation](docs/README.md)** | Complete documentation index |
 
-- **PR Builds**: Fast 5-minute builds with downloadable wheels
-- **Main Builds**: Comprehensive testing + PySpark compatibility  
-- **Releases**: Automatic publishing on git tags (`v1.2.3`)
+## 🤝 **Contributing**
 
-See [`docs/ci-cd/`](docs/ci-cd/) for full CI/CD documentation.
+We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
 
-## 📚 Documentation
+1. **Fork** the repository
+2. **Create** a feature branch (`git checkout -b feature/amazing-feature`)
+3. **Test** your changes (`pytest tests/ -v`)
+4. **Commit** with clear messages
+5. **Submit** a Pull Request
 
-- **[🚀 QUICK_START.md](QUICK_START.md)** - Get started immediately
-- **[📁 docs/ci-cd/](docs/ci-cd/)** - CI/CD workflows and optimization
-- **[🔒 docs/security/](docs/security/)** - Security policies and practices  
-- **[⚙️ docs/operations/](docs/operations/)** - Production operations guides
-- **[📊 databricks/](databricks/)** - Databricks integration guides
+## 📊 **Performance**
 
-## Roadmap / next sprints
+- **API Rate Limiting**: 5 requests/second (configurable)
+- **Concurrent Processing**: Multiple tickers processed in parallel
+- **S3 Partitioning**: Optimized for time-series queries
+- **Delta Lake**: ACID transactions and time travel
+- **Memory Optimized**: Configurable Spark memory settings
 
-- Databricks Silver processing notebooks
-- Daily orchestration with GitHub Actions schedules
-- Gold layer fair-value and momentum features
-- Streamlit analytics dashboard
-- Terraform infrastructure as code
+## 🔒 **Security & Compliance**
 
-## Tech stack & key libraries
+- **OIDC Authentication**: No long-lived AWS credentials
+- **Supply Chain Security**: SBOM generation and vulnerability scanning
+- **Secrets Management**: Environment variable based configuration
+- **Access Control**: IAM roles and policies for least-privilege access
 
-PySpark 3.5, Delta Lake 3.0, Databricks Workflows, AWS S3, Great Expectations, 
-GitHub Actions.
+## 📄 **License**
 
-## Contributing & license
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-PRs welcome. MIT license.
+---
+
+**Built with ❤️ for the financial data community**
