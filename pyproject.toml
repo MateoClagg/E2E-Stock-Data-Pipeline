@@ -41,8 +41,6 @@ include-package-data = true
 
 [tool.setuptools_scm]
 # Dynamic versioning with setuptools_scm
-write_to = "stock_pipeline/_version.py"
-write_to_template = '__version__ = "{version}"\n'
 local_scheme = "no-local-version"  # Clean releases only - will error on dirty tree for tagged builds
 version_scheme = "guess-next-dev"
 fallback_version = "0.0.0+unknown"
