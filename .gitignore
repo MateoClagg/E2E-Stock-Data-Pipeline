@@ -56,3 +56,8 @@ sf_config.py
 
 # Notebook metadata (optional)
 .ipynb_metadata/
+
+# Python package build artifacts
+build/
+dist/
+*.egg-info/

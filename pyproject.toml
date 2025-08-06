@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]      # modern build backend
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stock-pipeline"                        # wheel name
+version = "0.1.0"
+description = "E2E stock data pipeline (Bronze → Silver)"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{name = "Mateo Clagg"}]
+
+# Only runtime deps that Databricks doesn't ship!
+dependencies = [
+    "requests==2.31.0",
+    "python-dotenv==1.0.0",
+    "aiohttp==3.8.6",
+    "great-expectations==0.18.8",
+    "pydantic==2.7.1"
+]
+
+[tool.setuptools]
+package-dir = {"" = "."}                       # treat repo root as package root
+packages = ["bronze", "silver"]                # list top-level pkgs
+include-package-data = true

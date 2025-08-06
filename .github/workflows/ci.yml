@@ -12,6 +12,9 @@ jobs:
     
     steps:
     - uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
     
     - name: Set up Python 3.11
       uses: actions/setup-python@v4
@@ -54,6 +57,32 @@ jobs:
       with:
         file: ./coverage.xml
         fail_ci_if_error: false
+
+    - name: Build wheel
+      run: |
+        pip install build
+        python -m build --wheel
+        mkdir -p wheels
+        cp dist/*.whl wheels/
+
+    - name: Configure Git
+      if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/feature/')
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+
+    - name: Commit updated wheel
+      if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/feature/')
+      run: |
+        git add wheels/*.whl
+        if git diff --staged --quiet; then
+          echo "No wheel changes to commit"
+        else
+          git commit -m "chore: update wheel build [skip ci]"
+          git push
+        fi
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   integration-test:
     runs-on: ubuntu-latest
