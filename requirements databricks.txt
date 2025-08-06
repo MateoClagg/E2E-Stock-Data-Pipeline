@@ -1,0 +1,41 @@
+# ==== requirements.txt (Databricks runtime 14.x, Spark 3.5) ====
+
+# ── Numeric stack ──────────────────────────────────────────────
+numpy==2.3.0
+pandas==2.3.1
+pyarrow==20.0.0          # used by fastparquet
+
+# ── Core data processing ───────────────────────────────────────
+requests==2.31.0
+python-dotenv==1.0.0
+aiohttp==3.8.6           # async FMP calls
+pydantic==2.7.1
+great-expectations==0.18.8
+
+# ── Testing ────────────────────────────────────────────────────
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-mock==3.12.0
+
+# ── Django app deps (optional UI / API layer) ──────────────────
+asgiref==3.8.1
+Django==5.2
+fastparquet==2024.11.0
+fsspec==2025.5.1
+certifi==2023.7.22
+charset-normalizer==3.2.0
+idna==3.10
+packaging==25.0
+python-dateutil==2.9.0.post0
+pytz==2025.2
+six==1.17.0
+sqlparse==0.5.3
+tzdata==2025.2
+urllib3==2.4.0
+cramjam==2.10.0
+
+# ── NOTE ───────────────────────────────────────────────────────
+# *Do not* list pyspark or delta-spark here; Databricks 14 LTS
+# already includes compatible versions (Spark 3.5 / Delta 3.0).
+# Installing different wheels would overwrite the runtime
+# build and require a kernel restart.
