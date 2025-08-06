@@ -73,7 +73,7 @@ jobs:
         python -c "
         import sys
         try:
-            import bronze, silver, ingestion, validation
+            import bronze, silver, validation
             import stock_pipeline
             print('✓ All modules imported successfully')
             print(f'✓ Version: {stock_pipeline.__version__}')

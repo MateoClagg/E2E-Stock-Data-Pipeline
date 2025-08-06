@@ -8,8 +8,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, List
 
 # Import shared utilities
-from ingestion.utils import AsyncFMPClient, FMPConfig
-from bronze.utils import create_spark_session, write_bronze_data
+from bronze.utils import AsyncFMPClient, FMPConfig, create_spark_session, write_bronze_data
 from bronze.ingestion.schemas import get_bronze_schemas
 
 

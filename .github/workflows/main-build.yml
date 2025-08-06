@@ -78,7 +78,7 @@ jobs:
         pip install dist/*.whl
         
         # Simple smoke test without complex indentation
-        python -c "import bronze, silver, ingestion, validation, stock_pipeline; print('✓ All modules imported'); print(f'✓ Version: {stock_pipeline.__version__}')"
+        python -c "import bronze, silver, validation, stock_pipeline; print('✓ All modules imported'); print(f'✓ Version: {stock_pipeline.__version__}')"
 
     - name: Run comprehensive tests
       run: |

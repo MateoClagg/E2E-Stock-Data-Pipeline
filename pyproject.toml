@@ -33,7 +33,7 @@ dependencies = [
 
 [tool.setuptools]
 package-dir = {"" = "."}
-packages = ["bronze", "silver", "ingestion", "validation"]
+packages = ["bronze", "silver", "validation"]
 include-package-data = true
 
 [tool.setuptools.package-data]

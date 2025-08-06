@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch
 from datetime import datetime, timezone
 import asyncio
 
-from ingestion.utils import AsyncFMPClient, FMPConfig, RateLimiter
+from bronze.utils import AsyncFMPClient, FMPConfig, RateLimiter
 from bronze.ingestion.schemas import get_bronze_schemas
 
 
@@ -393,7 +393,7 @@ class TestDataValidation:
     
     def test_annual_report_type_validation(self):
         # Ensure all fundamental data is marked as ANNUAL
-        from ingestion.fmp_ingest import write_bronze_data
+        from bronze.utils import write_bronze_data
         
         # This would normally test the write_bronze_data function
         # but requires Spark setup, so we test the logic separately
