@@ -21,7 +21,7 @@ pytest-mock==3.12.0
 
 # Existing Django app deps
 asgiref==3.8.1
-Django==5.0.9
+Django==5.1.10
 fastparquet==2024.8.0
 fsspec==2024.9.0
 certifi==2023.7.22
