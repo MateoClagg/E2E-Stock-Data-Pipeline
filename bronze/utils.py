@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional
 import aiohttp
 from pydantic import BaseModel
-from pyspark.sql import SparkSession, DataFrame
+from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType
 from dotenv import load_dotenv
 

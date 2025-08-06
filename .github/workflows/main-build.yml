@@ -44,13 +44,13 @@ jobs:
     - name: Install build dependencies
       run: |
         python -m pip install --upgrade pip setuptools>=77 wheel build twine
-        pip install setuptools-scm[toml] pip-audit cyclonedx-bom
+        pip install setuptools-scm[toml] cyclonedx-bom~=3.15 pip-audit
         pip install -r requirements.txt
 
     - name: Full lint check
       run: |
         pip install ruff
-        ruff check . --statistics
+        ruff check . --fix --statistics
       continue-on-error: true
 
     - name: Clean previous builds
@@ -69,11 +69,11 @@ jobs:
     - name: Generate SBOM and security audit
       run: |
         # Generate SBOM (Software Bill of Materials)
-        cyclonedx-py requirements -o sbom.json --format json
+        cyclonedx-bom -o sbom.json
         
         # Run security audit
         pip-audit --desc --output audit-report.json --format json dist/*.whl || {
-          echo "⚠️ Security vulnerabilities found (check audit-report.json)"
+          echo "⚠️  Security vulnerabilities found (see audit-report.json)"
         }
 
     - name: Comprehensive package test

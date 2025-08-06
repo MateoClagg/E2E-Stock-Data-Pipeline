@@ -1,10 +1,6 @@
 import pytest
 from datetime import datetime, date
-from unittest.mock import patch, MagicMock
 from pyspark.sql import SparkSession
-from pyspark.sql.types import StructType, StructField, StringType, DoubleType, LongType, DateType
-import tempfile
-import shutil
 
 from silver.views.unified_views import create_unified_price_fundamental_view
 

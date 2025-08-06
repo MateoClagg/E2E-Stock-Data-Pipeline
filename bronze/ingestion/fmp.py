@@ -5,7 +5,7 @@ import asyncio
 import json
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List
+from typing import Dict
 from dotenv import load_dotenv
 
 # Load environment variables from .env file

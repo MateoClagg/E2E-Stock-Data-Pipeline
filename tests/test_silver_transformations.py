@@ -1,12 +1,10 @@
 import pytest
 from datetime import datetime, date
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from pyspark.sql import SparkSession
-from pyspark.sql.types import StructType, StructField, StringType, DoubleType, LongType, DateType
-import pandas as pd
+from pyspark.sql.types import StructType, StructField, StringType, LongType
 
-from silver.transformations.validity_windows import add_validity_windows, transform_fundamental_table
-from silver.transformations.clean_data import transform_price_data
+from silver.transformations.validity_windows import add_validity_windows
 
 
 class TestValidityWindows:
@@ -151,7 +149,7 @@ class TestDataCleaning:
         with patch.object(spark_session.read, 'parquet', return_value=sample_price_data):
             with patch('silver.transformations.clean_data.transform_price_data') as mock_transform:
                 # Create the expected result DataFrame with correct types
-                from pyspark.sql.types import StructType, StructField, StringType, DoubleType, LongType, DateType
+                from pyspark.sql.types import DoubleType, LongType, DateType
                 from pyspark.sql.functions import col, to_date
                 
                 # Transform the sample data with correct types
