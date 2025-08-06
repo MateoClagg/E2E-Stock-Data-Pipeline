@@ -1,7 +1,7 @@
 # ==== requirements.txt (re-ordered & compatible) ====
-numpy==2.3.0          
-pandas==2.3.1      
-pyarrow==20.0.0       
+numpy==2.2.6         
+pandas==2.2.2      
+pyarrow==17.0.0       
 
 # Core data processing
 requests==2.31.0
@@ -21,17 +21,17 @@ pytest-mock==3.12.0
 
 # Existing Django app deps
 asgiref==3.8.1
-Django==5.2
-fastparquet==2024.11.0
-fsspec==2025.5.1
+Django==5.0.9
+fastparquet==2024.8.0
+fsspec==2024.9.0
 certifi==2023.7.22
 charset-normalizer==3.2.0
 idna==3.10
-packaging==25.0
+packaging==24.1
 python-dateutil==2.9.0.post0
-pytz==2025.2
-six==1.17.0
+pytz==2024.2
+six==1.16.0
 sqlparse==0.5.3
-tzdata==2025.2
-urllib3==2.4.0
-cramjam==2.10.0
+tzdata==2024.2
+urllib3==2.2.3
+cramjam==2.8.4
