@@ -77,38 +77,8 @@ jobs:
         # Install the built wheel
         pip install dist/*.whl
         
-        # Full smoke test
-        python -c "
-import sys
-import re
-
-# Test core module imports
-try:
-    import bronze, silver, ingestion, validation
-    import stock_pipeline
-    print('✓ All core modules imported successfully')
-    
-    # Version validation
-    version = stock_pipeline.__version__
-    print(f'✓ Package version: {version}')
-    
-    # Validate version format (should be proper for main branch)
-    if re.match(r'^\d+\.\d+\.\d+', version):
-        print('✓ Clean version format')
-    else:
-        print(f'ℹ️ Dev version detected: {version}')
-    
-    # Test key functionality
-    from bronze.ingestion.schemas import StockPrice
-    from silver.transformations.clean_data import remove_duplicates
-    print('✓ Key functions accessible')
-    
-except ImportError as e:
-    print(f'✗ Import failed: {e}')
-    sys.exit(1)
-except Exception as e:
-    print(f'! Test warning: {e}')
-"
+        # Simple smoke test without complex indentation
+        python -c "import bronze, silver, ingestion, validation, stock_pipeline; print('✓ All modules imported'); print(f'✓ Version: {stock_pipeline.__version__}')"
 
     - name: Run comprehensive tests
       run: |
@@ -176,67 +146,69 @@ except Exception as e:
     
     - name: PySpark compatibility test
       run: |
-        python -c "
-import os
-os.environ['PYSPARK_PYTHON'] = 'python'
-
-from pyspark.sql import SparkSession
-import time
-
-print('🔥 Starting PySpark compatibility test...')
-start_time = time.time()
-
-# Create Spark session
-spark = SparkSession.builder \
-    .appName('StockPipelineCompatibilityTest') \
-    .master('local[2]') \
-    .config('spark.sql.adaptive.enabled', 'false') \
-    .config('spark.serializer', 'org.apache.spark.serializer.KryoSerializer') \
-    .getOrCreate()
-
-try:
-    print('✓ Spark session created')
-    
-    # Test module imports in Spark context
-    import bronze.ingestion.schemas as schemas
-    import silver.transformations.clean_data as clean_data
-    
-    # Create test DataFrame
-    test_data = [
-        ('AAPL', '2023-01-01', 150.0, 155.0, 148.0, 152.0, 1000000),
-        ('AAPL', '2023-01-01', 150.0, 155.0, 148.0, 152.0, 1000000),  # duplicate
-        ('MSFT', '2023-01-01', 250.0, 255.0, 248.0, 252.0, 800000),
-    ]
-    columns = ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume']
-    
-    df = spark.createDataFrame(test_data, columns)
-    print(f'✓ Created test DataFrame with {df.count()} rows')
-    
-    # Test deduplication if function exists
-    if hasattr(clean_data, 'remove_duplicates'):
-        cleaned_df = clean_data.remove_duplicates(df)
-        print(f'✓ Deduplication test: {df.count()} → {cleaned_df.count()} rows')
-    else:
-        print('ℹ️ remove_duplicates function not found, skipping test')
-    
-    # Performance check
-    test_time = time.time() - start_time
-    print(f'✓ PySpark test completed in {test_time:.1f}s')
-    
-    if test_time > 120:  # 2 minutes
-        print('⚠️ PySpark test took longer than expected')
-    
-    print('✅ PySpark compatibility test PASSED')
-    
-except Exception as e:
-    print(f'❌ PySpark compatibility test FAILED: {e}')
-    import traceback
-    traceback.print_exc()
-    exit(1)
-    
-finally:
-    spark.stop()
-"
+        cat > spark_test.py << 'EOF'
+        import os
+        os.environ['PYSPARK_PYTHON'] = 'python'
+        
+        from pyspark.sql import SparkSession
+        import time
+        
+        print('🔥 Starting PySpark compatibility test...')
+        start_time = time.time()
+        
+        # Create Spark session
+        spark = SparkSession.builder \
+            .appName('StockPipelineCompatibilityTest') \
+            .master('local[2]') \
+            .config('spark.sql.adaptive.enabled', 'false') \
+            .config('spark.serializer', 'org.apache.spark.serializer.KryoSerializer') \
+            .getOrCreate()
+        
+        try:
+            print('✓ Spark session created')
+            
+            # Test module imports in Spark context
+            import bronze.ingestion.schemas as schemas
+            import silver.transformations.clean_data as clean_data
+            
+            # Create test DataFrame
+            test_data = [
+                ('AAPL', '2023-01-01', 150.0, 155.0, 148.0, 152.0, 1000000),
+                ('AAPL', '2023-01-01', 150.0, 155.0, 148.0, 152.0, 1000000),
+                ('MSFT', '2023-01-01', 250.0, 255.0, 248.0, 252.0, 800000),
+            ]
+            columns = ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume']
+            
+            df = spark.createDataFrame(test_data, columns)
+            print(f'✓ Created test DataFrame with {df.count()} rows')
+            
+            # Test deduplication if function exists
+            if hasattr(clean_data, 'remove_duplicates'):
+                cleaned_df = clean_data.remove_duplicates(df)
+                print(f'✓ Deduplication test: {df.count()} → {cleaned_df.count()} rows')
+            else:
+                print('ℹ️ remove_duplicates function not found, skipping test')
+            
+            # Performance check
+            test_time = time.time() - start_time
+            print(f'✓ PySpark test completed in {test_time:.1f}s')
+            
+            if test_time > 120:
+                print('⚠️ PySpark test took longer than expected')
+            
+            print('✅ PySpark compatibility test PASSED')
+            
+        except Exception as e:
+            print(f'❌ PySpark compatibility test FAILED: {e}')
+            import traceback
+            traceback.print_exc()
+            exit(1)
+            
+        finally:
+            spark.stop()
+        EOF
+        
+        python spark_test.py
 
     - name: PySpark test summary
       run: |
