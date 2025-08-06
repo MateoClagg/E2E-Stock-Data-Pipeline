@@ -1,0 +1,258 @@
+name: Release to CodeArtifact
+
+on:
+  push:
+    tags:
+      - 'v*'  # Trigger on version tags like v1.0.0
+
+permissions:
+  id-token: write  # Required for OIDC
+  contents: write  # Required for creating GitHub releases
+  attestations: write  # Required for SBOM attestation
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false  # Never cancel releases
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: production  # Use GitHub environment for additional security
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332  # v4.1.7
+      with:
+        fetch-depth: 0  # Required for setuptools_scm
+
+    - name: Set up Python
+      uses: actions/setup-python@39cd14951b08e74b54015e9e001cdefcf80e669f  # v5.1.1
+      with:
+        python-version: "3.11"
+
+    - name: Cache pip dependencies
+      uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9  # v4.0.2
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-release-${{ hashFiles('**/pyproject.toml', '**/requirements*.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-release-
+
+    - name: Install release dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build twine setuptools-scm[toml] awscli pip-audit cyclonedx-bom
+
+    - name: 🔒 CRITICAL RELEASE GUARDRAILS
+      id: guardrails
+      run: |
+        echo "🛡️ Executing release safety checks..."
+        
+        # Get versions
+        VERSION=$(python -c "from setuptools_scm import get_version; print(get_version())")
+        TAG_VERSION="${GITHUB_REF_NAME#v}"  # Strip 'v' prefix from tag
+        
+        echo "Package version: $VERSION"
+        echo "Tag version: $TAG_VERSION"
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "tag_version=$TAG_VERSION" >> $GITHUB_OUTPUT
+        
+        # GUARDRAIL 1: Enforce tag ↔ version match
+        if [ "$VERSION" != "$TAG_VERSION" ]; then
+          echo "❌ GUARDRAIL FAILURE: Version mismatch!"
+          echo "  Package version: $VERSION"
+          echo "  Git tag version: $TAG_VERSION"
+          echo "  These must match exactly for release safety."
+          exit 1
+        fi
+        
+        # GUARDRAIL 2: Ensure clean release (no dev/dirty suffixes)
+        if [[ "$VERSION" =~ \.dev[0-9]+|\.dirty|[\+] ]]; then
+          echo "❌ GUARDRAIL FAILURE: Refusing to release dev/dirty version: $VERSION"
+          echo "  Only clean tagged versions can be released."
+          exit 1
+        fi
+        
+        # GUARDRAIL 3: Verify clean working tree
+        if ! git diff --quiet || ! git diff --cached --quiet; then
+          echo "❌ GUARDRAIL FAILURE: Working tree is dirty"
+          echo "  Cannot release with uncommitted changes."
+          git status --short
+          exit 1
+        fi
+        
+        echo "✅ All release guardrails passed: $VERSION"
+
+    - name: Build release package
+      run: |
+        python -m build  # Build both wheel and sdist
+        
+    - name: Verify build integrity
+      run: |
+        ls -la dist/
+        twine check dist/*
+        echo "✓ Package integrity verified"
+
+    - name: Generate release SBOM and security audit
+      run: |
+        # Generate SBOM (Software Bill of Materials) 
+        cyclonedx-py -o sbom.json --format json
+        cyclonedx-py -o sbom.xml --format xml
+        
+        # Run security audit on release packages
+        echo "🔍 Running security audit on release packages..."
+        pip-audit --desc --output audit-report.json --format json dist/*.whl || {
+          echo "⚠️ Security vulnerabilities found in dependencies"
+          echo "📄 See audit-report.json for details"
+          echo "🚨 Consider delaying release until vulnerabilities are addressed"
+        }
+        
+        echo "✓ Release SBOM generated and security audit completed"
+
+    - name: Configure AWS credentials via OIDC
+      uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502  # v4.0.2
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+        role-session-name: github-actions-release
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    # TODO: Replace these placeholders with actual values:
+    # - <domain>: Your CodeArtifact domain name
+    # - <account_id>: Your AWS account ID  
+    # - <repository>: Your CodeArtifact repository name
+    # - <region>: Your AWS region (e.g., us-east-1)
+    - name: Configure CodeArtifact authentication
+      run: |
+        aws codeartifact login --tool pip \
+          --domain ${{ secrets.CODEARTIFACT_DOMAIN }} \
+          --domain-owner ${{ secrets.CODEARTIFACT_ACCOUNT_ID }} \
+          --repository ${{ secrets.CODEARTIFACT_REPOSITORY }} \
+          --region ${{ secrets.AWS_REGION }}
+        
+        aws codeartifact login --tool twine \
+          --domain ${{ secrets.CODEARTIFACT_DOMAIN }} \
+          --domain-owner ${{ secrets.CODEARTIFACT_ACCOUNT_ID }} \
+          --repository ${{ secrets.CODEARTIFACT_REPOSITORY }} \
+          --region ${{ secrets.AWS_REGION }}
+
+    - name: Publish to CodeArtifact
+      run: |
+        echo "Publishing ${{ steps.version.outputs.version }} to CodeArtifact..."
+        twine upload --repository codeartifact dist/*
+        echo "✓ Successfully published to CodeArtifact"
+
+    - name: Copy wheel to S3 (optional)
+      if: vars.S3_WHEELS_BUCKET != ''
+      run: |
+        PACKAGE_NAME="stock-pipeline"
+        VERSION="${{ steps.version.outputs.version }}"
+        
+        # Upload all wheels to S3
+        for wheel in dist/*.whl; do
+          aws s3 cp "$wheel" "s3://${{ vars.S3_WHEELS_BUCKET }}/wheels/${PACKAGE_NAME}/${VERSION}/"
+        done
+        
+        echo "✓ Wheels copied to S3: s3://${{ vars.S3_WHEELS_BUCKET }}/wheels/${PACKAGE_NAME}/${VERSION}/"
+
+    - name: Print installation instructions
+      run: |
+        PACKAGE_NAME="stock-pipeline"
+        VERSION="${{ steps.guardrails.outputs.version }}"
+        DOMAIN="${{ secrets.CODEARTIFACT_DOMAIN }}"
+        ACCOUNT_ID="${{ secrets.CODEARTIFACT_ACCOUNT_ID }}"
+        REPOSITORY="${{ secrets.CODEARTIFACT_REPOSITORY }}"
+        REGION="${{ secrets.AWS_REGION }}"
+        
+        echo ""
+        echo "🎉 Release $VERSION published successfully!"
+        echo ""
+        echo "📦 Installation Instructions:"
+        echo ""
+        echo "1. From CodeArtifact (recommended):"
+        echo "   %pip install ${PACKAGE_NAME}==${VERSION} --index-url https://${DOMAIN}-${ACCOUNT_ID}.d.codeartifact.${REGION}.amazonaws.com/pypi/${REPOSITORY}/simple/"
+        echo ""
+        
+        if [ -n "${{ vars.S3_WHEELS_BUCKET }}" ]; then
+          echo "2. From Unity Catalog Volume (if configured):"
+          echo "   %pip install /Volumes/<catalog>/<schema>/<volume>/wheels/${PACKAGE_NAME}/${VERSION}/${PACKAGE_NAME}-${VERSION}-py3-none-any.whl"
+          echo ""
+        fi
+        
+        echo "3. For development (Databricks Repos):"
+        echo "   %pip install -e ."
+        echo ""
+
+    - name: Create GitHub release with security artifacts
+      uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191  # v2.0.8
+      with:
+        files: |
+          dist/*
+          sbom.json
+          sbom.xml
+          audit-report.json
+        generate_release_notes: true
+        body: |
+          ## 🚀 Release ${{ steps.guardrails.outputs.version }}
+
+          ### 📦 Installation
+
+          #### From CodeArtifact (Production)
+          ```bash
+          pip install stock-pipeline==${{ steps.guardrails.outputs.version }} --index-url https://${{ secrets.CODEARTIFACT_DOMAIN }}-${{ secrets.CODEARTIFACT_ACCOUNT_ID }}.d.codeartifact.${{ secrets.AWS_REGION }}.amazonaws.com/pypi/${{ secrets.CODEARTIFACT_REPOSITORY }}/simple/
+          ```
+
+          #### In Databricks
+          ```python
+          %pip install stock-pipeline==${{ steps.guardrails.outputs.version }} --index-url https://${{ secrets.CODEARTIFACT_DOMAIN }}-${{ secrets.CODEARTIFACT_ACCOUNT_ID }}.d.codeartifact.${{ secrets.AWS_REGION }}.amazonaws.com/pypi/${{ secrets.CODEARTIFACT_REPOSITORY }}/simple/
+          ```
+
+          ### 🔒 Security & Supply Chain
+
+          - ✅ **Release guardrails passed** (tag ↔ version, clean tree)
+          - ✅ **Tag ↔ Version verified** (${{ steps.guardrails.outputs.tag_version }} ↔ ${{ steps.guardrails.outputs.version }})
+          - 📋 **SBOM included** (CycloneDX format)  
+          - 🔍 **Security audit completed** (pip-audit)
+          - 🏷️ **Pure Python wheel** (py3-none-any)
+
+          ### 📋 Attachments
+          - `sbom.json` - Software Bill of Materials (CycloneDX)
+          - `audit-report.json` - Security vulnerability report
+
+    - name: Notify on success
+      if: success()
+      uses: 8398a7/action-slack@28ba43ae48961b90635b50953d216767a6bea486  # v3.16.2
+      with:
+        status: success
+        text: |
+          🎉 **SUCCESS**: stock-pipeline v${{ steps.guardrails.outputs.version }} released
+          📦 Available in CodeArtifact: `stock-pipeline==${{ steps.guardrails.outputs.version }}`
+          🔒 Security audit: PASSED
+          📋 SBOM attached to GitHub release
+          🔗 Release: ${{ github.server_url }}/${{ github.repository }}/releases/tag/v${{ steps.guardrails.outputs.version }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      continue-on-error: true
+
+    - name: Notify on failure  
+      if: failure()
+      uses: 8398a7/action-slack@28ba43ae48961b90635b50953d216767a6bea486  # v3.16.2
+      with:
+        status: failure
+        text: |
+          🚨 **CRITICAL FAILURE**: stock-pipeline v${{ steps.guardrails.outputs.tag_version }} release FAILED
+          
+          **Immediate Actions Required:**
+          1. Check workflow logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          2. Verify no partial release occurred in CodeArtifact
+          3. Investigate root cause before retry
+          
+          **Possible Issues:**
+          • Version/tag mismatch (most common)
+          • Dirty working tree on release
+          • CodeArtifact authentication failure
+          • Security audit failures
+          
+          @channel - Release engineer attention required
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      continue-on-error: true

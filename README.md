@@ -46,8 +46,35 @@ tests/
 └── ci.yml
 ```
 
-## Quick-start (local)
+## Installing the Package
 
+> **⚠️ IMPORTANT: Package Name Mapping**  
+> **Install:** `stock-pipeline` (with hyphen)  
+> **Import:** `stock_pipeline` (with underscore) + `bronze`, `silver`, `ingestion`, `validation`
+
+### From CodeArtifact (Production)
+```python
+# In Databricks notebook or cluster init script
+%pip install stock-pipeline==X.Y.Z --index-url https://<domain>-<account_id>.d.codeartifact.<region>.amazonaws.com/pypi/<repository>/simple/
+
+# Then import the modules
+import stock_pipeline
+import bronze, silver, ingestion, validation
+```
+
+### From Unity Catalog Volume (Alternative)
+```python
+# If wheels are copied to Unity Catalog Volumes
+%pip install /Volumes/<catalog>/<schema>/<volume>/wheels/stock-pipeline/X.Y.Z/stock_pipeline-X.Y.Z-py3-none-any.whl
+```
+
+### For Development (Editable Install)
+```python
+# In Databricks Repos or local development
+%pip install -e "."
+```
+
+### Local Development Setup
 ```bash
 git clone https://github.com/MateoClagg/E2E-Stock-Data-Pipeline.git
 cd E2E-Stock-Data-Pipeline
@@ -57,12 +84,34 @@ pytest -q -m "not integration"                     # unit tests
 pytest -m integration --runlive                    # live FMP tests (needs FMP_API_KEY)
 ```
 
-## CI pipeline
+## 📦 Package Installation & Usage
 
-- **Lint**: flake8 syntax and style checks
-- **Unit tests**: Bronze/Silver transformation logic (no external dependencies)
-- **Coverage**: pytest-cov with Codecov reporting
-- **Integration tests**: Live FMP API and Spark operations (main branch only)
+> **⚠️ IMPORTANT**: Install `stock-pipeline` (hyphen) but import `stock_pipeline` + modules (underscore)
+
+### Quick Test Locally
+```bash
+pip install -e .  # Development install
+python -c "import bronze, silver, stock_pipeline; print('✅ Works!')"
+```
+
+### Production Installation (when ready)
+See [`docs/operations/RELEASING.md`](docs/operations/RELEASING.md) for AWS CodeArtifact setup.
+
+## 🚀 CI/CD Pipeline
+
+- **PR Builds**: Fast 5-minute builds with downloadable wheels
+- **Main Builds**: Comprehensive testing + PySpark compatibility  
+- **Releases**: Automatic publishing on git tags (`v1.2.3`)
+
+See [`docs/ci-cd/`](docs/ci-cd/) for full CI/CD documentation.
+
+## 📚 Documentation
+
+- **[🚀 QUICK_START.md](QUICK_START.md)** - Get started immediately
+- **[📁 docs/ci-cd/](docs/ci-cd/)** - CI/CD workflows and optimization
+- **[🔒 docs/security/](docs/security/)** - Security policies and practices  
+- **[⚙️ docs/operations/](docs/operations/)** - Production operations guides
+- **[📊 databricks/](databricks/)** - Databricks integration guides
 
 ## Roadmap / next sprints
 

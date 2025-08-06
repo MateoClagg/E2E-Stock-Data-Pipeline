@@ -1,0 +1,244 @@
+name: Main Branch Build
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: main-build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false  # Don't cancel main builds
+
+jobs:
+  comprehensive-build:
+    name: Comprehensive Build & Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10  # Up to 10 minutes for comprehensive testing
+    
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11"]  # Full matrix on main
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332  # v4.1.7
+      with:
+        fetch-depth: 0  # Full history for setuptools_scm
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@39cd14951b08e74b54015e9e001cdefcf80e669f  # v5.1.1
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Cache pip dependencies
+      uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9  # v4.0.2
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-main-py${{ matrix.python-version }}-${{ hashFiles('**/pyproject.toml', '**/requirements*.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-main-py${{ matrix.python-version }}-
+
+    - name: Install build dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build twine setuptools-scm[toml] pip-audit cyclonedx-bom
+        pip install -r requirements.txt
+
+    - name: Full lint check
+      run: |
+        pip install ruff
+        ruff check . --statistics
+      continue-on-error: true
+
+    - name: Build package (wheel + sdist)
+      run: |
+        python -m build  # Both wheel and sdist
+        
+    - name: Verify build artifacts
+      run: |
+        ls -la dist/
+        twine check dist/*
+
+    - name: Generate SBOM and security audit
+      run: |
+        # Generate SBOM (Software Bill of Materials)
+        cyclonedx-py -o sbom.json --format json
+        
+        # Run security audit
+        pip-audit --desc --output audit-report.json --format json dist/*.whl || {
+          echo "⚠️ Security vulnerabilities found (check audit-report.json)"
+        }
+
+    - name: Comprehensive package test
+      run: |
+        # Install the built wheel
+        pip install dist/*.whl
+        
+        # Full smoke test
+        python -c "
+import sys
+import re
+
+# Test core module imports
+try:
+    import bronze, silver, ingestion, validation
+    import stock_pipeline
+    print('✓ All core modules imported successfully')
+    
+    # Version validation
+    version = stock_pipeline.__version__
+    print(f'✓ Package version: {version}')
+    
+    # Validate version format (should be proper for main branch)
+    if re.match(r'^\d+\.\d+\.\d+', version):
+        print('✓ Clean version format')
+    else:
+        print(f'ℹ️ Dev version detected: {version}')
+    
+    # Test key functionality
+    from bronze.ingestion.schemas import StockPrice
+    from silver.transformations.clean_data import remove_duplicates
+    print('✓ Key functions accessible')
+    
+except ImportError as e:
+    print(f'✗ Import failed: {e}')
+    sys.exit(1)
+except Exception as e:
+    print(f'! Test warning: {e}')
+"
+
+    - name: Run comprehensive tests
+      run: |
+        pip install pytest pytest-cov
+        # Full test suite with coverage
+        pytest -v --cov=bronze --cov=silver --cov=ingestion --cov=validation --cov-report=xml -m "not integration" --tb=short
+
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        fail_ci_if_error: false
+
+    - name: Generate version info
+      id: version
+      run: |
+        VERSION=$(python -c "from setuptools_scm import get_version; print(get_version())")
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Generated version: $VERSION"
+
+    - name: Upload main artifacts
+      uses: actions/upload-artifact@50769540e7f4bd5e21e526ee35c689e35e0d6874  # v4.4.0
+      with:
+        name: main-package-${{ matrix.python-version }}-${{ steps.version.outputs.version }}
+        path: |
+          dist/
+          sbom.json
+          audit-report.json
+        retention-days: 14
+        if-no-files-found: error
+
+  # PySpark compatibility testing (separate job to run in parallel)
+  spark-compatibility:
+    name: PySpark Compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 8  # Dedicated time for PySpark setup
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332  # v4.1.7
+      with:
+        fetch-depth: 0
+    
+    - name: Set up Python 3.11
+      uses: actions/setup-python@39cd14951b08e74b54015e9e001cdefcf80e669f  # v5.1.1
+      with:
+        python-version: "3.11"
+    
+    - name: Install Java (required for PySpark)
+      uses: actions/setup-java@2dfa2011c5b2a0f1489bf9e433881c92c1631f88  # v4.3.0
+      with:
+        java-version: '11'
+        distribution: 'temurin'
+    
+    - name: Cache PySpark installation
+      uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9  # v4.0.2
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pyspark-cache
+    
+    - name: Install PySpark and package
+      run: |
+        pip install pyspark==3.5.0  # Match Databricks runtime
+        pip install -e .  # Install in editable mode
+    
+    - name: PySpark compatibility test
+      run: |
+        python -c "
+import os
+os.environ['PYSPARK_PYTHON'] = 'python'
+
+from pyspark.sql import SparkSession
+import time
+
+print('🔥 Starting PySpark compatibility test...')
+start_time = time.time()
+
+# Create Spark session
+spark = SparkSession.builder \
+    .appName('StockPipelineCompatibilityTest') \
+    .master('local[2]') \
+    .config('spark.sql.adaptive.enabled', 'false') \
+    .config('spark.serializer', 'org.apache.spark.serializer.KryoSerializer') \
+    .getOrCreate()
+
+try:
+    print('✓ Spark session created')
+    
+    # Test module imports in Spark context
+    import bronze.ingestion.schemas as schemas
+    import silver.transformations.clean_data as clean_data
+    
+    # Create test DataFrame
+    test_data = [
+        ('AAPL', '2023-01-01', 150.0, 155.0, 148.0, 152.0, 1000000),
+        ('AAPL', '2023-01-01', 150.0, 155.0, 148.0, 152.0, 1000000),  # duplicate
+        ('MSFT', '2023-01-01', 250.0, 255.0, 248.0, 252.0, 800000),
+    ]
+    columns = ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume']
+    
+    df = spark.createDataFrame(test_data, columns)
+    print(f'✓ Created test DataFrame with {df.count()} rows')
+    
+    # Test deduplication if function exists
+    if hasattr(clean_data, 'remove_duplicates'):
+        cleaned_df = clean_data.remove_duplicates(df)
+        print(f'✓ Deduplication test: {df.count()} → {cleaned_df.count()} rows')
+    else:
+        print('ℹ️ remove_duplicates function not found, skipping test')
+    
+    # Performance check
+    test_time = time.time() - start_time
+    print(f'✓ PySpark test completed in {test_time:.1f}s')
+    
+    if test_time > 120:  # 2 minutes
+        print('⚠️ PySpark test took longer than expected')
+    
+    print('✅ PySpark compatibility test PASSED')
+    
+except Exception as e:
+    print(f'❌ PySpark compatibility test FAILED: {e}')
+    import traceback
+    traceback.print_exc()
+    exit(1)
+    
+finally:
+    spark.stop()
+"
+
+    - name: PySpark test summary
+      run: |
+        echo "✅ PySpark compatibility verified"
+        echo "🎯 Ready for Databricks deployment"

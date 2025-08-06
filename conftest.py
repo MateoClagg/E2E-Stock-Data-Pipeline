@@ -2,7 +2,7 @@ import pytest
 
 
 def pytest_addoption(parser):
-    """Add --runlive flag to enable integration tests."""
+   
     parser.addoption(
         "--runlive", 
         action="store_true", 
@@ -12,7 +12,7 @@ def pytest_addoption(parser):
 
 
 def pytest_configure(config):
-    """Register custom markers."""
+   
     config.addinivalue_line(
         "markers", "integration: mark test as integration test requiring live API or Spark"
     )
@@ -22,7 +22,7 @@ def pytest_configure(config):
 
 
 def pytest_collection_modifyitems(config, items):
-    """Skip integration tests unless --runlive is specified."""
+   
     if config.getoption("--runlive"):
         return
     

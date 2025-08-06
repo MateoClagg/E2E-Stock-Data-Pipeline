@@ -1,0 +1,36 @@
+# Code Ownership for E2E Stock Data Pipeline
+# 
+# This file defines who is responsible for reviewing different parts of the codebase.
+# GitHub will automatically request reviews from code owners when PRs touch their areas.
+
+# Global owners (fallback for any file not specifically owned)
+* @MateoClagg
+
+# Critical infrastructure and CI/CD
+/.github/ @MateoClagg
+/pyproject.toml @MateoClagg  
+/requirements*.txt @MateoClagg
+/RELEASING.md @MateoClagg
+/databricks/ @MateoClagg
+
+# Core package modules
+/bronze/ @MateoClagg
+/silver/ @MateoClagg  
+/ingestion/ @MateoClagg
+/validation/ @MateoClagg
+/stock_pipeline/ @MateoClagg
+
+# Security and configuration
+/.gitignore @MateoClagg
+/LICENSE @MateoClagg
+/SECURITY.md @MateoClagg
+
+# Documentation
+/README.md @MateoClagg
+/docs/ @MateoClagg
+*.md @MateoClagg
+
+# Test infrastructure
+/tests/ @MateoClagg
+/pytest.ini @MateoClagg
+/conftest.py @MateoClagg
