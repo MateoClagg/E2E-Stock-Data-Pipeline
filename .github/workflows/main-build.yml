@@ -98,6 +98,7 @@ jobs:
     - name: Generate version info
       id: version
       run: |
+        pip install setuptools-scm[toml]
         VERSION=$(python -c "from setuptools_scm import get_version; print(get_version())")
         echo "version=$VERSION" >> $GITHUB_OUTPUT
         echo "Generated version: $VERSION"
