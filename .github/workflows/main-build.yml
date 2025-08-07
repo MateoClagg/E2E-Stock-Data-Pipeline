@@ -70,7 +70,7 @@ jobs:
     - name: Generate SBOM and security audit
       run: |
         # Generate SBOM (Software Bill of Materials)
-        cyclonedx-bom -o sbom.json
+        python -m cyclonedx_bom -o sbom.json
         
         # Run security audit
         pip-audit --desc --output audit-report.json --format json dist/*.whl || {
