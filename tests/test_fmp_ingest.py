@@ -235,21 +235,21 @@ class TestFMPClient:
             result = await client.fetch_all_data("AAPL", "2024-01-01", "2024-01-31")
         
         # Verify we got data for all four types
-        assert "prices" in result
+        assert "price" in result
         assert "income" in result  
         assert "cashflow" in result
         assert "balance" in result
         
         # Check data quality and structure
-        assert len(result["prices"]) == 2
+        assert len(result["price"]) == 2
         assert len(result["income"]) == 5  # Should be exactly 5 annual records
         assert len(result["cashflow"]) == 5
         assert len(result["balance"]) == 5
         
         # Validate price data structure
-        assert result["prices"][0]["volume"] > 0
-        assert "close" in result["prices"][0]
-        assert "adjClose" in result["prices"][0]
+        assert result["price"][0]["volume"] > 0
+        assert "close" in result["price"][0]
+        assert "adjClose" in result["price"][0]
         
         # Validate income statement data
         assert result["income"][0]["revenue"] > 0
@@ -289,11 +289,11 @@ class TestFMPClient:
             result = await client.fetch_all_data("BADTICKER", "2024-01-01", "2024-01-31")
         
         # Should still return all keys but with empty data
-        assert "prices" in result
+        assert "price" in result
         assert "income" in result
         assert "cashflow" in result 
         assert "balance" in result
-        assert len(result["prices"]) == 0
+        assert len(result["price"]) == 0
         assert len(result["income"]) == 0
         assert len(result["cashflow"]) == 0
         assert len(result["balance"]) == 0
@@ -447,13 +447,13 @@ class TestLiveAPI:
         result = await client.fetch_all_data("F", "2023-01-01", "2023-12-31")
         
         # Should get data for all types
-        assert len(result["prices"]) > 200  # About 252 trading days per year
+        assert len(result["price"]) > 200  # About 252 trading days per year
         assert len(result["income"]) >= 1   # At least one annual report
         assert len(result["cashflow"]) >= 1
         assert len(result["balance"]) >= 1
         
         # Validate price data structure and ranges
-        prices = result["prices"]
+        prices = result["price"]
         first_price = prices[0]
         
         # Should have full OHLCV data
