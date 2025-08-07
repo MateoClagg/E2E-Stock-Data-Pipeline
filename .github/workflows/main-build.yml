@@ -126,9 +126,24 @@ jobs:
       if: github.ref == 'refs/heads/main' && matrix.python-version == '3.11'
       run: |
         echo "📦 Uploading main snapshot wheels to S3..."
-        aws s3 cp dist/ s3://${{ vars.S3_WHEELS_BUCKET }}/wheels/stock-pipeline/main/ \
-          --recursive --acl bucket-owner-full-control
-        echo "✅ Main snapshot uploaded to s3://${{ vars.S3_WHEELS_BUCKET }}/wheels/stock-pipeline/main/"
+        S3_PATH="s3://${{ vars.S3_WHEELS_BUCKET }}/wheels/stock-pipeline/main/"
+        
+        # Clean up old files first
+        echo "🧹 Cleaning up old wheel files..."
+        aws s3 rm "${S3_PATH}" --recursive || echo "No existing files to clean"
+        
+        # Find the wheel file and upload with stable name
+        WHEEL_FILE=$(find dist/ -name "*.whl" | head -1)
+        if [ -n "$WHEEL_FILE" ]; then
+          # Upload wheel with stable name for Databricks
+          aws s3 cp "$WHEEL_FILE" \
+            "${S3_PATH}stock_pipeline-latest.whl" \
+            --acl bucket-owner-full-control
+          echo "✅ Wheel uploaded as: ${S3_PATH}stock_pipeline-latest.whl"
+        else
+          echo "❌ No wheel file found in dist/"
+          exit 1
+        fi
 
   # PySpark compatibility testing (separate job to run in parallel)
   spark-compatibility:

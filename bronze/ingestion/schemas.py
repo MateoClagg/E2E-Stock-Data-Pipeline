@@ -1,7 +1,7 @@
 from typing import Dict
 from pyspark.sql.types import (
     StructType, StructField, StringType, DoubleType, 
-    LongType, TimestampType
+    LongType, TimestampType, DateType
 )
 
 
@@ -19,6 +19,7 @@ def get_bronze_schemas() -> Dict[str, StructType]:
         # Metadata columns for lineage tracking
         StructField("ingested_at", TimestampType(), False),
         StructField("run_id", StringType(), False),
+        StructField("ingest_date", DateType(), False),  # Partition key
     ])
     
     # Income statement has the core P&L metrics we care about
@@ -33,6 +34,7 @@ def get_bronze_schemas() -> Dict[str, StructType]:
         StructField("report_type", StringType(), False),  # Always "ANNUAL"
         StructField("ingested_at", TimestampType(), False),
         StructField("run_id", StringType(), False),
+        StructField("ingest_date", DateType(), False),  # Partition key
     ])
     
     # Cash flow focuses on FCF and operating cash flow
