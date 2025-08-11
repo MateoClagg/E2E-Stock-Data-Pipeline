@@ -28,7 +28,7 @@ classifiers = [
 
 # Only runtime deps that Databricks doesn't ship!
 dependencies = [
-    "requests==2.32.3",
+    "requests==2.32.4",
     "python-dotenv==1.0.1",
     "aiohttp==3.12.14",
     "great-expectations==0.18.11",

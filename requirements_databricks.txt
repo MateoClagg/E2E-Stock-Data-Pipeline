@@ -1,7 +1,7 @@
 # requirements.databricks.txt  (safe for DBR 14.x)
 
 # --- project libs ---
-requests==2.31.0
+requests==2.32.4
 python-dotenv==1.0.0
 aiohttp==3.12.14
 great-expectations==0.18.19
