@@ -35,5 +35,5 @@ charset-normalizer==3.4.0
 idna==3.7
 packaging==24.1
 python-dateutil==2.9.0.post0
-pytz==2024.2
+pytz==2025.2
 six==1.16.0
