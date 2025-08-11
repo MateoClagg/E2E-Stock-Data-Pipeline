@@ -23,7 +23,7 @@ pytest-mock==3.14.0
 Django==5.1.10
 asgiref==3.8.1
 sqlparse==0.5.3
-tzdata==2024.2
+tzdata==2025.2
 
 ################  Data formats / IO  ###################
 fastparquet==2024.5.0  # first build against numpy >=1.24
