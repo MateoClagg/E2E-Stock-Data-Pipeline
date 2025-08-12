@@ -10,7 +10,7 @@ python-dotenv==1.0.1   # bug-fix release after 1.0.0
 ################  Ingestion & Spark  ###################
 pyspark==3.5.0         # matches Databricks Runtime 14.x / Spark 3.5
 delta-spark==3.0.0     # first release aligned with Spark 3.5
-aiohttp==3.12.14
+aiohttp==3.12.15
 pydantic==2.9.2
 great-expectations==0.18.11  # last GE v0 line; v1 beta not GA yet
 
