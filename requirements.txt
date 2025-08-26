@@ -4,7 +4,7 @@ pandas==2.2.2          # works with numpy >=1.23,<3.0
 pyarrow==15.0.2        # pandas-arrow >=2.2 needs >=14; 15 is stable
 
 ################  Utility / config  ####################
-requests==2.32.3
+requests==2.32.5
 python-dotenv==1.0.1   # bug-fix release after 1.0.0
 
 ################  Ingestion & Spark  ###################
