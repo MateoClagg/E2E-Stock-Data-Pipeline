@@ -47,6 +47,7 @@ def get_bronze_schemas() -> Dict[str, StructType]:
         StructField("report_type", StringType(), False),
         StructField("ingested_at", TimestampType(), False),
         StructField("run_id", StringType(), False),
+        StructField("ingest_date", DateType(), False),  # Partition key
     ])
     
     # Balance sheet has debt, cash, equity for financial health analysis
@@ -60,6 +61,7 @@ def get_bronze_schemas() -> Dict[str, StructType]:
         StructField("report_type", StringType(), False),
         StructField("ingested_at", TimestampType(), False),
         StructField("run_id", StringType(), False),
+        StructField("ingest_date", DateType(), False),  # Partition key
     ])
     
     return {

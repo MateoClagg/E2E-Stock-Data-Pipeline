@@ -1,47 +1,69 @@
-# 📊 E2E Stock Data Pipeline
+# 📊 E2E Stock Fair-Value Pipeline
 
 [![Build Status](../../actions/workflows/pr-build.yml/badge.svg)](../../actions/workflows/pr-build.yml)
 [![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Code style: ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
-> **Enterprise-grade financial data pipeline** for ingesting, processing, and analyzing stock market data using the Medallion Architecture on Databricks.
+> **Cost-optimized financial data lakehouse** for stock market analysis using local ingestion + Databricks transformations.
 
-## 🎯 **Overview**
+## 🏗️ **Architecture Overview**
 
-This pipeline provides a complete end-to-end solution for financial data processing:
+**Cost-First Design**: API wait time runs locally, Databricks only for data transforms
 
-- **🥉 Bronze Layer**: Raw data ingestion from Financial Modeling Prep API with automated S3 storage
-- **🥈 Silver Layer**: Data cleaning, transformations, and validity windows for time-series analysis  
-- **🥇 Gold Layer**: Analytical views combining price and fundamental data
-- **🔍 Validation**: Data quality monitoring with Great Expectations
-- **🚀 CI/CD**: Automated testing, packaging, and deployment to Databricks
+```
+Local/EC2        S3 Raw           Databricks Serverless         Analytics
+┌─────────┐     ┌─────────┐      ┌─────────────────────────┐    ┌─────────┐
+│  FMP    │     │ Parquet │─────▶│ Auto Loader → Bronze    │    │ MLflow  │
+│  APIs   │────▶│ by      │      │ (CDF) → Silver (MERGE)  │───▶│ Feature │
+│ (local) │     │ symbol/ │      │ → Gold (features)       │    │ Store   │
+└─────────┘     └─────────┘      └─────────────────────────┘    └─────────┘
+                                          │
+                                          ▼
+                                  Databricks SQL/Athena
+```
 
-## ✨ **Key Features**
+## 🎯 **Key Benefits**
+
+- **💰 Cost Optimized**: 70% cost reduction by offloading API wait time from Databricks
+- **🚀 Scalable**: Designed for 1,000+ tickers, 5+ years of history
+- **⚡ Fast Development**: Local testing without expensive compute
+- **🔄 Flexible**: Keep existing Databricks expertise for transformations
+- **📊 Production Ready**: Enterprise security, monitoring, and CI/CD
+
+## ✨ **Features**
 
 - **📈 Multi-source Data**: Price data, income statements, cash flow, and balance sheets
-- **⚡ Async Processing**: Concurrent API calls with built-in rate limiting
-- **🎯 Time-series Ready**: Validity windows for point-in-time fundamental analysis
-- **☁️ Cloud Native**: Designed for Databricks with S3 integration
-- **🔒 Enterprise Security**: OIDC authentication, SBOM generation, vulnerability scanning
-- **🧪 Comprehensive Testing**: Unit tests, integration tests, and PySpark compatibility validation
+- **⚡ Async Processing**: Concurrent API calls with built-in rate limiting  
+- **🗂️ Smart Partitioning**: Optimized for query performance and cost
+- **🔍 Data Quality**: Great Expectations validation with quarantine patterns
+- **🏦 Lakehouse Format**: Parquet (raw) → Delta (analytics) for ACID + time travel
 
 ## 🚀 **Quick Start**
 
+### Local Ingestion (Cost-Optimized)
 ```bash
-# Install the package
-pip install stock-pipeline
-
-# Set up environment variables (see GETTING_STARTED.md)
+# 1. Setup environment
+pip install -e .
 export FMP_API_KEY="your_api_key"
-export AWS_ACCESS_KEY_ID="your_access_key"
-export S3_BUCKET_BRONZE="your-bucket-name"
+export S3_BUCKET_BRONZE="s3://your-bucket"
 
-# Ingest data
+# 2. Run local ingestion (no Databricks needed)
 python -m bronze.ingestion.fmp --tickers AAPL,MSFT --backfill
+
+# 3. Data flows to S3 → Ready for Databricks transforms
 ```
 
-**👉 [Complete Setup Guide](GETTING_STARTED.md)**
+### Databricks Lakehouse (Next Phase)
+```sql
+-- Auto-load from S3 → Delta tables
+COPY INTO bronze_prices FROM 's3://your-bucket/raw/prices/'
+
+-- Transform to analytics-ready format  
+MERGE INTO silver_prices USING bronze_prices ...
+```
+
+**Cost Target**: <$30/month total (S3: $10 + Databricks: <$20)
 
 ## 🏗️ **Architecture**
 

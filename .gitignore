@@ -183,3 +183,5 @@ stock_pipeline/_version.py
 
 # Personal documentation
 docs/personal/
+
+.databricks

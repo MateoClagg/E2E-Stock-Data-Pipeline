@@ -1,0 +1,19 @@
+# This is a Databricks asset bundle definition for E2E-Stock-Data-Pipeline.
+# The Databricks extension requires databricks.yml configuration file.
+# See https://docs.databricks.com/dev-tools/bundles/index.html for documentation.
+
+bundle:
+  name: E2E-Stock-Data-Pipeline
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: https://dbc-0dd82c25-15aa.cloud.databricks.com
+
+  ## Optionally, there could be 'staging' or 'prod' targets here.
+  #
+  # prod:
+  #   workspace:
+  #     host: https://dbc-0dd82c25-15aa.cloud.databricks.com

@@ -65,8 +65,29 @@ def write_bronze_data(spark: SparkSession, data: List[Dict], schema: StructType,
             record["report_type"] = "ANNUAL"
         enriched_data.append(record)
     
+    # Debug: Check for None values in non-nullable string fields
+    non_nullable_string_fields = [f.name for f in schema.fields 
+                                  if not f.nullable and f.dataType.typeName() == 'string']
+    
+    filtered_data = []
+    for i, record in enumerate(enriched_data):
+        is_valid = True
+        for field_name in non_nullable_string_fields:
+            if record.get(field_name) is None:
+                print(f"❌ {symbol} {table_type} record {i}: '{field_name}' is None")
+                is_valid = False
+        if is_valid:
+            filtered_data.append(record)
+    
+    if len(filtered_data) != len(enriched_data):
+        print(f"⚠️  {symbol} {table_type}: Filtered {len(enriched_data) - len(filtered_data)} invalid records")
+    
+    if not filtered_data:
+        print(f"⚠️  No valid {table_type} data for {symbol}, skipping")
+        return ""
+    
     # Create DataFrame with strict schema enforcement to catch data issues early
-    df = spark.createDataFrame(enriched_data, schema)
+    df = spark.createDataFrame(filtered_data, schema)
     
     # Write to S3 with symbol and date partitioning for efficient queries
     bucket = os.getenv('S3_BUCKET_BRONZE')
