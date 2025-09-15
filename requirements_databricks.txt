@@ -4,7 +4,7 @@
 requests==2.31.0
 python-dotenv==1.0.0
 aiohttp==3.12.14
-great-expectations==0.18.19
+great-expectations==1.6.0
 pydantic==2.9.2
 
 # --- testing (install only in CI / dev clusters) ---
