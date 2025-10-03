@@ -1,162 +1,198 @@
 # 🚀 Getting Started
 
-**E2E Stock Data Pipeline** - Enterprise-grade financial data ingestion and processing pipeline built for Databricks.
+**Local stock data ingestion pipeline** - Fetches FMP market data locally (cost-optimized) and writes to S3 for Databricks processing.
 
-## 📋 **Prerequisites**
+---
+
+## 📋 Prerequisites
 
 - **Python 3.10+** with pip
 - **FMP API key** from [Financial Modeling Prep](https://financialmodelingprep.com/)
 - **AWS account** with S3 access
-- **Databricks workspace** (optional for local development)
+- **Databricks workspace** (for Bronze/Silver/Gold transformations)
 
-## ⚡ **Quick Start**
+---
 
-### **1. Install the Package**
+## ⚡ Quick Start
 
+### 1. Clone and Install
+
+**Option A: Conda (Recommended for local development)**
 ```bash
-# From PyPI (once published)
-pip install stock-pipeline
-
-# Development install
 git clone <repository-url>
 cd E2E-Stock-Data-Pipeline
+
+# Create conda environment
+conda env create -f environment.yml
+conda activate stock-pipeline
+```
+
+**Option B: Pip**
+```bash
+git clone <repository-url>
+cd E2E-Stock-Data-Pipeline
+
+# Install dependencies
+pip install -r requirements.txt
+# Or install as editable package
 pip install -e .
 ```
 
-### **2. Environment Setup**
+### 2. Configure Environment
 
-Create `.env` file in the project root:
+Create `.env` file in project root:
 
 ```bash
-# API Configuration
+# FMP API
 FMP_API_KEY=your_fmp_api_key_here
 
-# AWS Configuration  
+# AWS S3
+S3_BUCKET=your-bucket-name
 AWS_ACCESS_KEY_ID=your_aws_access_key
 AWS_SECRET_ACCESS_KEY=your_aws_secret_key
-AWS_DEFAULT_REGION=us-east-2
+AWS_DEFAULT_REGION=us-east-1
 
-# S3 Buckets
-S3_BUCKET_BRONZE=your-bronze-bucket-name
+# Optional: Rate limiting
+RATE_LIMIT_SECONDS=15.0  # Free tier FMP
+MAX_WORKERS=5
 ```
 
-### **3. Run Bronze Layer Ingestion**
+### 3. Run Local Ingestion
 
 ```bash
-# Ingest yesterday's data for specific tickers
-python -m bronze.ingestion.fmp --tickers AAPL,MSFT,TSLA
+# Fetch yesterday's data (default)
+python stock_pipeline/scripts/ingest_local_to_s3.py
 
-# Backfill 5 years of historical data
-python -m bronze.ingestion.fmp --tickers AAPL --backfill
+# Backfill last 30 days
+python stock_pipeline/scripts/ingest_local_to_s3.py --backfill-days 30
+
+# Custom date range
+python stock_pipeline/scripts/ingest_local_to_s3.py \
+  --from-date 2024-01-01 \
+  --to-date 2024-09-30
 ```
 
-### **4. Databricks Integration**
+### 4. Verify S3 Output
 
-The package automatically uploads to S3 for Unity Catalog access:
+```bash
+aws s3 ls s3://your-bucket/raw/prices/ --recursive
 
-```python
-# In Databricks notebook
-%pip install stock-pipeline==<version> --index-url <your-codeartifact-url>
-
-# Or from Unity Catalog Volume
-%pip install /Volumes/catalog/schema/volume/wheels/stock-pipeline/<version>/stock_pipeline-<version>-py3-none-any.whl
+# Expected structure:
+# raw/prices/symbol=AAPL/year=2024/month=09/day=30/AAPL-2024-09-30.parquet
 ```
 
-## 🏗️ **Architecture**
+---
 
-### **Medallion Data Architecture**
-```
-📊 FMP API → 🥉 Bronze (Raw S3) → 🥈 Silver (Cleaned) → 🥇 Gold (Analytics)
-```
+## 🏗️ Architecture
 
-### **Package Structure**
 ```
-stock-pipeline/
-├── bronze/           # Raw data ingestion from FMP API
-│   ├── ingestion/    # API clients and ingestion logic
-│   └── utils.py      # Shared utilities and Spark configuration
-├── silver/           # Data transformations and cleaning
-│   ├── transformations/ # Business logic transformations
-│   └── views/        # Unified analytical views
-├── validation/       # Data quality and Great Expectations
-└── tests/           # Comprehensive test suite
+Local/GitHub Actions      S3 Raw Zone              Databricks
+┌─────────────────┐       ┌──────────────┐         ┌─────────────────┐
+│ FMP API         │       │ Day-level    │         │ Auto Loader     │
+│ (async fetch)   │──────▶│ Parquet      │────────▶│ → Bronze (CDF)  │
+│ polars/pyarrow  │       │ partitions   │         │ → Silver/Gold   │
+└─────────────────┘       └──────────────┘         └─────────────────┘
 ```
 
-## 🔧 **Production Setup**
+**Key principle:** API wait time runs locally (free), Databricks only for data transformations (cost-optimized).
 
-For full production deployment with CI/CD, AWS CodeArtifact, and Databricks automation, see:
+---
 
-- **[📊 Databricks Setup](databricks/DATABRICKS_SETUP.md)** - Unity Catalog and cluster configuration  
-- **[📚 Documentation](docs/README.md)** - Complete documentation index
+## 📊 What Gets Ingested
 
-## 🧪 **Testing**
+### Price Data (Daily OHLCV)
+- Date, Open, High, Low, Close, Adj Close, Volume
+- Partitioned by: `symbol/year/month/day`
+- One Parquet file per symbol per day
+
+### Fundamentals (Future)
+- Income statements, balance sheets, cash flow (annual)
+- Partitioned by: `type/symbol/year/docdate`
+
+---
+
+## 🤖 GitHub Actions (Automated)
+
+The pipeline runs automatically Monday-Friday at 11 PM UTC (after US market close).
+
+**Manual trigger:**
+1. Go to **Actions** → **Stock Data Ingestion**
+2. Click **Run workflow**
+3. Configure: tickers, dates, backfill days, force overwrite
+
+See [docs/ingestion_quickstart.md](docs/ingestion_quickstart.md) for full details.
+
+---
+
+## 🧪 Testing
 
 ```bash
 # Run unit tests
-pytest tests/ -v
+pytest tests/test_ingest_local.py -v
 
-# Run with coverage
-pytest tests/ --cov=bronze --cov=silver --cov=validation
+# Test S3 key generation
+pytest tests/test_ingest_local.py::TestS3KeyBuilder -v
 
-# Skip integration tests (require live API/S3)
-pytest tests/ -m "not integration"
+# Test Polars validation
+pytest tests/test_ingest_local.py::TestPolarsTransformations -v
 ```
 
-## 📖 **Usage Examples**
+---
 
-### **Bronze Layer - Raw Data Ingestion**
-```python
-from bronze.utils import AsyncFMPClient, FMPConfig
+## 🔧 Databricks Integration
 
-# Initialize client
-config = FMPConfig(api_key="your_api_key")
-client = AsyncFMPClient(config)
+Once raw data lands in S3, configure Databricks Auto Loader:
 
-# Fetch data for multiple symbols
-data = await client.fetch_all_data("AAPL", "2024-01-01", "2024-12-31")
-# Returns: {"price": [...], "income": [...], "cashflow": [...], "balance": [...]}
+```sql
+-- Auto-load from S3 → Bronze Delta table
+CREATE OR REFRESH STREAMING LIVE TABLE bronze_prices
+AS SELECT * FROM cloud_files(
+  's3://your-bucket/raw/prices/',
+  'parquet',
+  map('cloudFiles.schemaLocation', 's3://your-bucket/schemas/prices/')
+);
+
+-- Bronze → Silver (deduplication, quality checks)
+MERGE INTO silver.prices ...
+
+-- Silver → Gold (features, aggregations)
+CREATE VIEW gold.price_features AS ...
 ```
 
-### **Silver Layer - Transformations**
-```python
-from silver.transformations.clean_data import remove_duplicates
-from silver.views.unified_views import create_price_fundamental_view
+See [databricks/DATABRICKS_SETUP.md](databricks/DATABRICKS_SETUP.md) for complete setup.
 
-# Clean data
-cleaned_df = remove_duplicates(raw_df)
+---
 
-# Create analytical views
-unified_view = create_price_fundamental_view(spark)
-```
+## 🆘 Common Issues
 
-## 🆘 **Common Issues**
+**FMP API rate limit errors (429)?**
+- Increase `RATE_LIMIT_SECONDS` to `20.0` or higher
+- Reduce `MAX_WORKERS` to process fewer symbols concurrently
+- Free tier: 250 calls/day
 
-**Environment Variables Not Loading?**
-- Ensure `.env` file is in project root
-- Check `.env` file syntax (no spaces around `=`)
+**S3 permission errors?**
+- Verify IAM role has `s3:PutObject`, `s3:GetObject`, `s3:ListBucket`
+- For GitHub Actions: check `AWS_ROLE_ARN` trust policy for OIDC
 
-**S3 Permission Errors?**
-- Verify AWS credentials have S3 read/write access
-- Check bucket name format (no `s3://` prefix in env vars)
+**No data returned from API?**
+- Verify `FMP_API_KEY` is valid
+- Try a different ticker (e.g., `AAPL` always works)
+- Check FMP account status/limits
 
-**FMP API Rate Limits?**
-- Built-in rate limiting (5 requests/second)
-- Upgrade FMP plan for higher limits
+**Trading days vs calendar days?**
+- Script uses `pandas-market-calendars` for NYSE calendar
+- Weekends/holidays are automatically excluded
 
-## 🤝 **Contributing**
+---
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+## 📚 Next Steps
 
-## 📄 **License**
+1. **[Ingestion Guide](docs/ingestion_quickstart.md)** - Complete local ingestion documentation
+2. **[Databricks Setup](databricks/DATABRICKS_SETUP.md)** - Unity Catalog and medallion architecture
+3. **[GitHub Workflows](.github/workflows/ingest.yml)** - Automated ingestion config
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+---
 
-## 📞 **Support**
+## 📄 License
 
-- **Documentation**: [docs/](docs/README.md)
-- **Issues**: [GitHub Issues](../../issues)
-- **Discussions**: [GitHub Discussions](../../discussions)
+MIT License - see [LICENSE](LICENSE) for details.

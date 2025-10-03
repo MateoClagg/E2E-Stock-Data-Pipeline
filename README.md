@@ -1,26 +1,25 @@
-# 📊 E2E Stock Fair-Value Pipeline
+# 📊 Stock Market Data Pipeline
 
 [![Build Status](../../actions/workflows/pr-build.yml/badge.svg)](../../actions/workflows/pr-build.yml)
 [![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Code style: ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
-> **Cost-optimized financial data lakehouse** for stock market analysis using local ingestion + Databricks transformations.
+> **Cost-optimized stock data ingestion** - Local async FMP API fetching → S3 Parquet → Databricks medallion architecture.
 
 ## 🏗️ **Architecture Overview**
 
-**Cost-First Design**: API wait time runs locally, Databricks only for data transforms
+**Cost-First Design**: API wait time runs locally (GitHub Actions/EC2), Databricks only for data transformations.
 
 ```
-Local/EC2        S3 Raw           Databricks Serverless         Analytics
-┌─────────┐     ┌─────────┐      ┌─────────────────────────┐    ┌─────────┐
-│  FMP    │     │ Parquet │─────▶│ Auto Loader → Bronze    │    │ MLflow  │
-│  APIs   │────▶│ by      │      │ (CDF) → Silver (MERGE)  │───▶│ Feature │
-│ (local) │     │ symbol/ │      │ → Gold (features)       │    │ Store   │
-└─────────┘     └─────────┘      └─────────────────────────┘    └─────────┘
-                                          │
-                                          ▼
-                                  Databricks SQL/Athena
+Local/GitHub Actions  S3 Raw Zone          Databricks Serverless         Analytics
+┌─────────────────┐   ┌──────────────┐    ┌─────────────────────────┐    ┌─────────┐
+│ FMP API         │   │ Day-level    │───▶│ Auto Loader → Bronze    │    │ Delta   │
+│ (async fetch)   │──▶│ Parquet      │    │ (CDF) → Silver (MERGE)  │───▶│ Tables  │
+│ polars/pyarrow  │   │ partitions   │    │ → Gold (features)       │    │ & Views │
+└─────────────────┘   └──────────────┘    └─────────────────────────┘    └─────────┘
+                                                      │
+                                                      ▼
+                                              Databricks SQL/Athena
 ```
 
 ## 🎯 **Key Benefits**
@@ -41,29 +40,26 @@ Local/EC2        S3 Raw           Databricks Serverless         Analytics
 
 ## 🚀 **Quick Start**
 
-### Local Ingestion (Cost-Optimized)
 ```bash
-# 1. Setup environment
+# 1. Install dependencies
 pip install -e .
+
+# 2. Configure environment (.env file)
 export FMP_API_KEY="your_api_key"
-export S3_BUCKET_BRONZE="s3://your-bucket"
+export S3_BUCKET="your-bucket"
+export AWS_ACCESS_KEY_ID="..."
+export AWS_SECRET_ACCESS_KEY="..."
 
-# 2. Run local ingestion (no Databricks needed)
-python -m bronze.ingestion.fmp --tickers AAPL,MSFT --backfill
+# 3. Run local ingestion (yesterday's data)
+python stock_pipeline/scripts/ingest_local_to_s3.py
 
-# 3. Data flows to S3 → Ready for Databricks transforms
+# 4. Backfill historical data
+python stock_pipeline/scripts/ingest_local_to_s3.py --backfill-days 30
 ```
 
-### Databricks Lakehouse (Next Phase)
-```sql
--- Auto-load from S3 → Delta tables
-COPY INTO bronze_prices FROM 's3://your-bucket/raw/prices/'
+**Output:** Day-partitioned Parquet in `s3://{bucket}/raw/prices/symbol=X/year=Y/month=M/day=D/`
 
--- Transform to analytics-ready format  
-MERGE INTO silver_prices USING bronze_prices ...
-```
-
-**Cost Target**: <$30/month total (S3: $10 + Databricks: <$20)
+**Monthly Cost**: ~$50 total (FMP API: $30, S3: <$10, Databricks: <$10)
 
 ## 🏗️ **Architecture**
 
@@ -81,69 +77,68 @@ graph LR
 ### **Package Structure**
 ```
 📦 stock-pipeline/
-├── 🥉 bronze/              # Raw data ingestion
-│   ├── ingestion/          # FMP API client and schemas  
-│   └── utils.py           # Spark configuration and S3 utilities
-├── 🥈 silver/              # Data transformations
-│   ├── transformations/    # Cleaning and business logic
-│   └── views/             # Unified analytical views
-├── 🔍 validation/          # Data quality (Great Expectations)
-├── 🧪 tests/              # Comprehensive test suite
-├── 📊 docs/               # Documentation by topic
-└── ⚙️ .github/workflows/   # CI/CD automation
+├── 📊 stock_pipeline/
+│   ├── scripts/
+│   │   ├── ingest_local_to_s3.py   # Main ingestion script (async + polars)
+│   │   └── utils/
+│   │       └── dates.py            # Trading calendar utilities
+│   └── config/
+│       └── tickers.csv             # Default ticker list
+├── 🧪 tests/
+│   └── test_ingest_local.py        # Unit tests
+├── 📊 docs/
+│   └── ingestion_quickstart.md     # Complete ingestion guide
+└── ⚙️ .github/workflows/
+    └── ingest.yml                   # Nightly cron + manual dispatch
 ```
+
+**Note:** Bronze/Silver/Gold transformations live in Databricks (not in this repo).
 
 ## 📊 **Data Pipeline**
 
-| Layer | Purpose | Technology | Output Format |
-|-------|---------|------------|---------------|
-| **Bronze** | Raw ingestion | AsyncIO + FMP API | S3 Parquet (partitioned) |
-| **Silver** | Cleaning & transformations | PySpark + Delta | Delta Tables |
-| **Gold** | Analytics & aggregation | SQL + Views | Databricks Views |
+| Layer | Purpose | Technology | Location |
+|-------|---------|------------|----------|
+| **Raw Zone** | Local async ingestion | aiohttp + polars + boto3 | S3 Parquet (day-partitioned) |
+| **Bronze** | Auto Loader streaming | Databricks Auto Loader | Delta Tables (CDF enabled) |
+| **Silver** | Cleaning & transformations | PySpark + Delta MERGE | Delta Tables |
+| **Gold** | Analytics & features | SQL + Views | Databricks Views/Tables |
 
 ## 🔧 **Development**
 
-### **Local Development**
 ```bash
+# Clone and install
 git clone <repository-url>
 cd E2E-Stock-Data-Pipeline
 pip install -e .
-pytest tests/ -v
+
+# Run tests
+pytest tests/test_ingest_local.py -v
+
+# Test locally with your FMP key
+python stock_pipeline/scripts/ingest_local_to_s3.py --tickers-path stock_pipeline/config/tickers.csv
 ```
 
 ### **CI/CD Pipeline**
-- **PR Builds**: Fast validation (≤5 min) - linting, imports, basic tests
-- **Main Builds**: Comprehensive testing (≤10 min) - full test suite, PySpark validation  
-- **Release Builds**: Production deployment - CodeArtifact publishing, security auditing
-
-### **Databricks Integration**
-```python
-# Auto-install from Unity Catalog Volume
-%pip install /Volumes/catalog/schema/volume/wheels/stock-pipeline/latest/
-
-# Or from private CodeArtifact
-%pip install stock-pipeline --index-url <codeartifact-url>
-```
+- **PR Builds**: Fast validation - linting, imports, unit tests
+- **Main Builds**: Full test suite + S3 wheel uploads
+- **Ingestion Workflow**: Nightly cron (Mon-Fri 11 PM UTC) + manual dispatch
 
 ## 📋 **Requirements**
 
 - **Python 3.10+**
-- **Apache Spark 3.5+** (for local development)  
-- **Databricks Runtime 13.0+** (for production)
-- **AWS S3** access for data storage
-- **FMP API subscription** for market data
+- **AWS S3** access
+- **FMP API subscription** ($30/month for real-time data)
+- **Databricks workspace** (optional, for Bronze/Silver/Gold transformations)
 
-## 🧪 **Testing Strategy**
+## 🧪 **Testing**
 
 ```bash
-# Unit tests (fast, no external dependencies)
-pytest tests/ -m "not integration"
+# Unit tests
+pytest tests/test_ingest_local.py -v
 
-# Integration tests (requires API keys and S3)  
-pytest tests/ -m integration
-
-# PySpark tests (validates Databricks compatibility)
-pytest tests/test_silver_* -v
+# Test specific components
+pytest tests/test_ingest_local.py::TestS3KeyBuilder -v
+pytest tests/test_ingest_local.py::TestPolarsTransformations -v
 ```
 
 ## 📚 **Documentation**
@@ -151,9 +146,8 @@ pytest tests/test_silver_* -v
 | Document | Description |
 |----------|-------------|
 | **[🚀 Getting Started](GETTING_STARTED.md)** | Installation and quick setup |
-| **[📋 Setup Requirements](SETUP_REQUIREMENTS.md)** | Complete production setup |
-| **[📊 Databricks Setup](databricks/DATABRICKS_SETUP.md)** | Unity Catalog configuration |
-| **[📚 Full Documentation](docs/README.md)** | Complete documentation index |
+| **[📊 Ingestion Guide](docs/ingestion_quickstart.md)** | Complete local ingestion documentation |
+| **[🔧 Databricks Setup](databricks/DATABRICKS_SETUP.md)** | Unity Catalog + Auto Loader configuration |
 
 ## 🤝 **Contributing**
 

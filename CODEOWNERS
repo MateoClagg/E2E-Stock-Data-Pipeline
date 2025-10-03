@@ -8,16 +8,11 @@
 
 # Critical infrastructure and CI/CD
 /.github/ @MateoClagg
-/pyproject.toml @MateoClagg  
+/pyproject.toml @MateoClagg
 /requirements*.txt @MateoClagg
-/RELEASING.md @MateoClagg
-/databricks/ @MateoClagg
+/environment.yml @MateoClagg
 
 # Core package modules
-/bronze/ @MateoClagg
-/silver/ @MateoClagg  
-/ingestion/ @MateoClagg
-/validation/ @MateoClagg
 /stock_pipeline/ @MateoClagg
 
 # Security and configuration

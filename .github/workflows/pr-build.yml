@@ -68,15 +68,16 @@ jobs:
       run: |
         # Install the built wheel
         pip install dist/*.whl
-        
+
         # Minimal smoke test - just imports
         python -c "
         import sys
         try:
-            import bronze, silver, validation
             import stock_pipeline
+            from stock_pipeline.scripts.ingest_local_to_s3 import build_s3_key_for_day
             print('✓ All modules imported successfully')
             print(f'✓ Version: {stock_pipeline.__version__}')
+            print(f'✓ Smoke test: {build_s3_key_for_day(\"AAPL\", \"2024-09-30\")}')
         except ImportError as e:
             print(f'✗ Import failed: {e}')
             sys.exit(1)
@@ -84,9 +85,9 @@ jobs:
 
     - name: Run fast tests
       run: |
-        pip install pytest
+        pip install pytest pytest-asyncio
         # Only unit tests, no integration, timeout after 60s
-        timeout 60s pytest -x -q --tb=short -m "not integration" || echo "Some tests failed (non-blocking for PR)"
+        timeout 60s pytest tests/test_ingest_local.py -x -q --tb=short -m "not integration" || echo "Some tests failed (non-blocking for PR)"
       continue-on-error: true
 
     - name: Upload PR artifact
