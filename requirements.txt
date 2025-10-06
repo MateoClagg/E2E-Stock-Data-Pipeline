@@ -12,7 +12,7 @@ pyspark==3.5.0         # matches Databricks Runtime 14.x / Spark 3.5
 delta-spark==3.0.0     # first release aligned with Spark 3.5
 aiohttp==3.12.14
 pydantic==2.9.2
-great-expectations==0.18.11  # last GE v0 line; v1 beta not GA yet
+great-expectations==1.6.4  # last GE v0 line; v1 beta not GA yet
 
 ################  Testing  #############################
 pytest==8.1.1
