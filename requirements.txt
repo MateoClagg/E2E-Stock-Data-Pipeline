@@ -1,5 +1,5 @@
 ################  Core analytics stack  ################
-numpy==1.26.4          # last 1.x LTS; fully supported by pandas 2.2
+numpy==2.2.6          # last 1.x LTS; fully supported by pandas 2.2
 pandas==2.2.2          # works with numpy >=1.23,<3.0
 pyarrow==15.0.2        # pandas-arrow >=2.2 needs >=14; 15 is stable
 
