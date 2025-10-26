@@ -248,8 +248,8 @@ def prices_to_polars(
         .with_columns([
             # Parse date string to DATE type
             pl.col("date").str.strptime(pl.Date, "%Y-%m-%d", strict=False).alias("as_of_date"),
-            # Parse fetched_at to TIMESTAMP
-            pl.col("fetched_at").str.strptime(pl.Datetime, strict=False),
+            # Parse fetched_at to TIMESTAMP (ISO format with timezone)
+            pl.col("fetched_at").str.strptime(pl.Datetime, "%Y-%m-%dT%H:%M:%S.%f%z", strict=False).dt.replace_time_zone(None),
             # Cast price/volume columns
             pl.col("open").cast(pl.Float64),
             pl.col("high").cast(pl.Float64),

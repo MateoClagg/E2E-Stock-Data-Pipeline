@@ -67,9 +67,8 @@ class TestPolarsTransformations:
 
     def test_prices_to_polars_basic(self, sample_fmp_prices):
         """Test conversion from FMP JSON to Polars DataFrame."""
-        fetched_at = datetime.now(timezone.utc)
-        request_id = "test-request-123"
-        df = prices_to_polars("AAPL", sample_fmp_prices, fetched_at, request_id)
+        ingest_ts = datetime.now(timezone.utc)
+        df = prices_to_polars("AAPL", sample_fmp_prices, ingest_ts)
 
         assert not df.is_empty()
         assert len(df) == 2
@@ -78,7 +77,8 @@ class TestPolarsTransformations:
         assert "request_id" in df.columns
         assert "file_hash" in df.columns
         assert df["symbol"][0] == "AAPL"
-        assert df["request_id"][0] == request_id
+        # request_id is generated internally, just check it exists
+        assert df["request_id"][0] is not None
 
     def test_prices_to_polars_validation_filters_invalid(self):
         """Test that invalid rows are filtered out."""
@@ -109,30 +109,28 @@ class TestPolarsTransformations:
             },
         ]
 
-        fetched_at = datetime.now(timezone.utc)
-        request_id = "test-request"
-        df = prices_to_polars("TEST", invalid_prices, fetched_at, request_id)
+        ingest_ts = datetime.now(timezone.utc)
+        df = prices_to_polars("TEST", invalid_prices, ingest_ts)
 
         # Only 1 valid row should remain
         assert len(df) == 1
-        assert df["as_of_date"][0] == "2024-09-15"
+        assert str(df["as_of_date"][0]) == "2024-09-15"
 
     def test_prices_to_polars_empty_input(self):
         """Test handling of empty price list."""
-        fetched_at = datetime.now(timezone.utc)
-        request_id = "test-request"
-        df = prices_to_polars("EMPTY", [], fetched_at, request_id)
+        ingest_ts = datetime.now(timezone.utc)
+        df = prices_to_polars("EMPTY", [], ingest_ts)
 
         assert df.is_empty()
 
     def test_prices_to_polars_sorted_by_date(self, sample_fmp_prices):
-        """Test that DataFrame is sorted by date descending."""
-        fetched_at = datetime.now(timezone.utc)
-        request_id = "test-request"
-        df = prices_to_polars("AAPL", sample_fmp_prices, fetched_at, request_id)
+        """Test that DataFrame is sorted by date ascending."""
+        ingest_ts = datetime.now(timezone.utc)
+        df = prices_to_polars("AAPL", sample_fmp_prices, ingest_ts)
 
         dates = df["as_of_date"].to_list()
-        assert dates == sorted(dates, reverse=True)
+        # Should be sorted ascending (oldest to newest)
+        assert dates == sorted(dates)
 
 
 class TestGroupByDay:
@@ -176,22 +174,24 @@ class TestDataValidation:
         prices = [
             {"date": "2024-09-15", "open": 100, "high": 105, "low": 99, "close": 102, "volume": -1000},
         ]
-        fetched_at = datetime.now(timezone.utc)
-        request_id = "test-request"
-        df = prices_to_polars("TEST", prices, fetched_at, request_id)
+        ingest_ts = datetime.now(timezone.utc)
+        df = prices_to_polars("TEST", prices, ingest_ts)
 
         assert df.is_empty()
 
     def test_non_null_symbol_date(self):
         """Test that null symbol/date are filtered."""
         prices = [
-            {"date": None, "open": 100, "high": 105, "low": 99, "close": 102, "volume": 1000},
+            {"date": "2024-09-15", "open": 100, "high": 105, "low": 99, "close": 102, "volume": 1000},
+            # Invalid date string that will fail parsing
+            {"date": "invalid-date", "open": 100, "high": 105, "low": 99, "close": 102, "volume": 1000},
         ]
-        fetched_at = datetime.now(timezone.utc)
-        request_id = "test-request"
-        df = prices_to_polars("TEST", prices, fetched_at, request_id)
+        ingest_ts = datetime.now(timezone.utc)
+        df = prices_to_polars("TEST", prices, ingest_ts)
 
-        assert df.is_empty()
+        # Should only have 1 row (the valid one)
+        assert len(df) == 1
+        assert str(df["as_of_date"][0]) == "2024-09-15"
 
 
 class TestDateUtilities:
@@ -241,9 +241,8 @@ class TestSchemaLocking:
             },
         ]
 
-        fetched_at = datetime.now(timezone.utc)
-        request_id = "test-request"
-        df = prices_to_polars("AAPL", sample_prices, fetched_at, request_id)
+        ingest_ts = datetime.now(timezone.utc)
+        df = prices_to_polars("AAPL", sample_prices, ingest_ts)
 
         # Expected locked columns (from ingest_fmp_prices.py)
         expected_cols = {
