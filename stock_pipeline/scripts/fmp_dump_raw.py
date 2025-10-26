@@ -6,16 +6,22 @@ Fetches raw API responses and writes NDJSON snapshots to S3 with metadata.
 Designed for idempotent daily runs with date partitioning.
 
 Usage:
+  # Daily ingestion (default)
   python fmp_dump_raw.py --date 2024-10-24 --endpoints owner_earnings,income,treasury_rates
   python fmp_dump_raw.py --date today --endpoints all --force
 
+  # Treasury rates backfill (5 years)
+  python fmp_dump_raw.py --endpoints treasury_rates --backfill-days 1825 --force
+  python fmp_dump_raw.py --endpoints treasury_rates --from-date 2019-10-25 --to-date 2024-10-25
+
 S3 Layout:
-  Treasury: raw/fmp/treasury_rates/dt=YYYY-MM-DD/treasury-rates-YYYY-MM-DD.ndjson
-  Statements: raw/fmp/statements/{type}/dt=YYYY-MM-DD/symbol={SYM}/{SYM}-{type}-YYYY-MM-DD.ndjson
+  Treasury: raw/fmp/treasury_rates/dt=YYYY-MM-DD/treasury-rates-YYYY-MM-DD.ndjson.gz
+  Statements: raw/fmp/statements/{type}/dt=YYYY-MM-DD/symbol={SYM}/{SYM}-{type}-YYYY-MM-DD.ndjson.gz
 """
 
 import argparse
 import asyncio
+import gzip
 import hashlib
 import json
 import os
@@ -70,31 +76,32 @@ ENDPOINTS = {
         "url_template": "https://financialmodelingprep.com/stable/owner-earnings",
         "params": {"symbol": "{symbol}", "limit": 5},
         "per_symbol": True,
-        "s3_path": "raw/fmp/owner_earnings/dt={date}/symbol={symbol}/{symbol}-owner-earnings-{date}.ndjson",
+        "s3_path": "raw/fmp/owner_earnings/dt={date}/symbol={symbol}/{symbol}-owner-earnings-{date}.ndjson.gz",
     },
     "income": {
         "url_template": "https://financialmodelingprep.com/api/v3/income-statement/{symbol}",
         "params": {"period": "annual", "limit": 5},
         "per_symbol": True,
-        "s3_path": "raw/fmp/statements/income/dt={date}/symbol={symbol}/{symbol}-income-{date}.ndjson",
+        "s3_path": "raw/fmp/statements/income/dt={date}/symbol={symbol}/{symbol}-income-{date}.ndjson.gz",
     },
     "balance_sheet": {
         "url_template": "https://financialmodelingprep.com/api/v3/balance-sheet-statement/{symbol}",
         "params": {"period": "annual", "limit": 5},
         "per_symbol": True,
-        "s3_path": "raw/fmp/statements/balance_sheet/dt={date}/symbol={symbol}/{symbol}-balance-{date}.ndjson",
+        "s3_path": "raw/fmp/statements/balance_sheet/dt={date}/symbol={symbol}/{symbol}-balance-{date}.ndjson.gz",
     },
     "cash_flow": {
         "url_template": "https://financialmodelingprep.com/api/v3/cash-flow-statement/{symbol}",
         "params": {"period": "annual", "limit": 5},
         "per_symbol": True,
-        "s3_path": "raw/fmp/statements/cash_flow/dt={date}/symbol={symbol}/{symbol}-cashflow-{date}.ndjson",
+        "s3_path": "raw/fmp/statements/cash_flow/dt={date}/symbol={symbol}/{symbol}-cashflow-{date}.ndjson.gz",
     },
     "treasury_rates": {
         "url_template": "https://financialmodelingprep.com/stable/treasury-rates",
         "params": {},
         "per_symbol": False,
-        "s3_path": "raw/fmp/treasury_rates/dt={date}/treasury-rates-{date}.ndjson",
+        "supports_backfill": True,  # Supports from/to date parameters
+        "s3_path": "raw/fmp/treasury_rates/dt={date}/treasury-rates-{date}.ndjson.gz",
     },
 }
 
@@ -250,7 +257,7 @@ def write_ndjson_to_s3(
     force: bool = False,
 ) -> bool:
     """
-    Write NDJSON records to S3.
+    Write NDJSON records to S3 with gzip compression.
 
     Returns:
         True if written, False if skipped
@@ -262,12 +269,16 @@ def write_ndjson_to_s3(
     ndjson_lines = [json.dumps(r) for r in records]
     ndjson_content = "\n".join(ndjson_lines)
 
+    # Gzip compress
+    compressed = gzip.compress(ndjson_content.encode("utf-8"))
+
     # Upload to S3
     s3_client.put_object(
         Bucket=bucket,
         Key=s3_key,
-        Body=ndjson_content.encode("utf-8"),
+        Body=compressed,
         ContentType="application/x-ndjson",
+        ContentEncoding="gzip",
     )
 
     return True
@@ -364,7 +375,7 @@ async def ingest_endpoint_market_wide(
     force: bool,
 ) -> Dict:
     """
-    Ingest market-wide endpoint (e.g., treasury rates).
+    Ingest market-wide endpoint (e.g., treasury rates) for a single day.
 
     Returns:
         Dict with endpoint, files_written, records_written, errors
@@ -423,6 +434,109 @@ async def ingest_endpoint_market_wide(
         }
 
 
+async def ingest_treasury_rates_backfill(
+    client: FMPClient,
+    endpoint: str,
+    endpoint_config: Dict,
+    from_date: str,
+    to_date: str,
+    s3_client,
+    bucket: str,
+    force: bool,
+) -> List[Dict]:
+    """
+    Backfill treasury rates for a date range.
+
+    Fetches data for the entire range in one API call, then splits into daily files.
+
+    Returns:
+        List of result dicts (one per day)
+    """
+    try:
+        # Build URL with date range params
+        url = endpoint_config["url_template"]
+        params = {
+            "from": from_date,
+            "to": to_date,
+        }
+
+        # Fetch data for entire range
+        request_id = str(uuid.uuid4())
+        fetched_at = datetime.now(timezone.utc)
+        data_list, http_status = await client.fetch(endpoint, url, params)
+
+        if not data_list:
+            return [{
+                "endpoint": endpoint,
+                "files_written": 0,
+                "records_written": 0,
+                "errors": ["No data returned for date range"],
+            }]
+
+        # Group data by date
+        from collections import defaultdict
+        data_by_date = defaultdict(list)
+
+        for obj in data_list:
+            # Extract date from payload (treasury rates have 'date' field)
+            date_str = obj.get("date")
+            if date_str:
+                data_by_date[date_str].append(obj)
+
+        if not data_by_date:
+            return [{
+                "endpoint": endpoint,
+                "files_written": 0,
+                "records_written": 0,
+                "errors": ["No valid dates found in response"],
+            }]
+
+        # Write one file per day (parallelized)
+        async def write_day(date_str: str, day_data: List[Dict]) -> Dict:
+            """Write one day's treasury data to S3."""
+            # Build records for this day
+            records = [
+                build_record(
+                    endpoint=endpoint,
+                    symbol=None,
+                    as_of_date=date_str,
+                    payload_obj=obj,
+                    fetched_at=fetched_at,
+                    http_status=http_status,
+                    request_id=request_id,
+                )
+                for obj in day_data
+            ]
+
+            # Build S3 key
+            s3_key = endpoint_config["s3_path"].format(date=date_str)
+
+            # Write to S3
+            written = write_ndjson_to_s3(records, s3_key, s3_client, bucket, force)
+
+            return {
+                "endpoint": endpoint,
+                "date": date_str,
+                "files_written": 1 if written else 0,
+                "records_written": len(records) if written else 0,
+                "errors": [] if written else ["File exists (use --force)"],
+            }
+
+        # Parallelize S3 writes
+        write_tasks = [write_day(date_str, day_data) for date_str, day_data in sorted(data_by_date.items())]
+        results = await asyncio.gather(*write_tasks)
+
+        return list(results)
+
+    except Exception as e:
+        return [{
+            "endpoint": endpoint,
+            "files_written": 0,
+            "records_written": 0,
+            "errors": [str(e)],
+        }]
+
+
 # ============================================================================
 # Main Orchestration
 # ============================================================================
@@ -465,6 +579,19 @@ async def main():
         help="Path to symbols file",
     )
     parser.add_argument(
+        "--backfill-days",
+        type=int,
+        help="Backfill N days for treasury rates (only applies to treasury_rates endpoint)",
+    )
+    parser.add_argument(
+        "--from-date",
+        help="Start date for treasury rates backfill (YYYY-MM-DD)",
+    )
+    parser.add_argument(
+        "--to-date",
+        help="End date for treasury rates backfill (YYYY-MM-DD)",
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         help="Overwrite existing S3 objects",
@@ -475,13 +602,29 @@ async def main():
     # Validate config
     Config.validate()
 
-    # Parse date
+    # Parse date and backfill range
     if args.date == "today":
         as_of_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     else:
         as_of_date = args.date
 
-    print(f"📅 Snapshot date: {as_of_date}")
+    # Determine if treasury rates backfill is requested
+    treasury_backfill_from = None
+    treasury_backfill_to = None
+
+    if args.backfill_days:
+        from datetime import timedelta
+        to_dt = datetime.now(timezone.utc)
+        from_dt = to_dt - timedelta(days=args.backfill_days)
+        treasury_backfill_from = from_dt.strftime("%Y-%m-%d")
+        treasury_backfill_to = to_dt.strftime("%Y-%m-%d")
+        print(f"📅 Treasury backfill range: {treasury_backfill_from} to {treasury_backfill_to}")
+    elif args.from_date and args.to_date:
+        treasury_backfill_from = args.from_date
+        treasury_backfill_to = args.to_date
+        print(f"📅 Treasury backfill range: {treasury_backfill_from} to {treasury_backfill_to}")
+    else:
+        print(f"📅 Snapshot date: {as_of_date}")
 
     # Parse endpoints
     if args.endpoints == "all":
@@ -527,11 +670,26 @@ async def main():
                 all_results.extend(results)
             else:
                 # Market-wide endpoint
-                result = await ingest_endpoint_market_wide(
-                    fmp_client, endpoint, endpoint_config,
-                    as_of_date, s3_client, Config.S3_BUCKET, args.force
-                )
-                all_results.append(result)
+                # Check if this is treasury_rates with backfill requested
+                if (endpoint == "treasury_rates" and
+                    treasury_backfill_from and treasury_backfill_to and
+                    endpoint_config.get("supports_backfill")):
+                    # Use backfill function
+                    print(f"🔄 Backfilling treasury rates: {treasury_backfill_from} to {treasury_backfill_to}")
+                    results = await ingest_treasury_rates_backfill(
+                        fmp_client, endpoint, endpoint_config,
+                        treasury_backfill_from, treasury_backfill_to,
+                        s3_client, Config.S3_BUCKET, args.force
+                    )
+                    all_results.extend(results)
+                    print(f"✅ Treasury backfill complete: {len(results)} days written")
+                else:
+                    # Regular single-day ingestion
+                    result = await ingest_endpoint_market_wide(
+                        fmp_client, endpoint, endpoint_config,
+                        as_of_date, s3_client, Config.S3_BUCKET, args.force
+                    )
+                    all_results.append(result)
 
     elapsed_time = time.time() - start_time
 
