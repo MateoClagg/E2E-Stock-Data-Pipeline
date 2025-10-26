@@ -53,32 +53,52 @@ AWS_SECRET_ACCESS_KEY=your_aws_secret_key
 AWS_DEFAULT_REGION=us-east-1
 
 # Optional: Rate limiting
-RATE_LIMIT_SECONDS=15.0  # Free tier FMP
-MAX_WORKERS=5
+RATE_LIMIT_SECONDS=0.2   # Paid tier (300/min). Free tier: use 15.0 (250/day)
+MAX_WORKERS=10
 ```
 
 ### 3. Run Local Ingestion
 
+**Price Data (OHLCV - Daily):**
 ```bash
 # Fetch yesterday's data (default)
-python stock_pipeline/scripts/ingest_local_to_s3.py
+python stock_pipeline/scripts/ingest_fmp_prices.py
 
 # Backfill last 30 days
-python stock_pipeline/scripts/ingest_local_to_s3.py --backfill-days 30
+python stock_pipeline/scripts/ingest_fmp_prices.py --backfill-days 30
 
 # Custom date range
-python stock_pipeline/scripts/ingest_local_to_s3.py \
+python stock_pipeline/scripts/ingest_fmp_prices.py \
   --from-date 2024-01-01 \
-  --to-date 2024-09-30
+  --to-date 2024-10-24
+```
+
+**Financial Statements & Metrics:**
+```bash
+# Fetch all endpoints (income, balance sheet, cash flow, owner earnings, treasury rates)
+python stock_pipeline/scripts/fmp_dump_raw.py --endpoints all
+
+# Specific endpoints only
+python stock_pipeline/scripts/fmp_dump_raw.py --endpoints income,balance_sheet
+
+# Treasury rates only
+python stock_pipeline/scripts/fmp_dump_raw.py --endpoints treasury_rates
 ```
 
 ### 4. Verify S3 Output
 
 ```bash
-aws s3 ls s3://your-bucket/raw/prices/ --recursive
+# Price data (Parquet - all symbols combined per day)
+aws s3 ls s3://your-bucket/raw/fmp/prices/ --recursive
+# Expected: raw/fmp/prices/dt=2024-10-24/prices-2024-10-24.parquet
 
-# Expected structure:
-# raw/prices/symbol=AAPL/year=2024/month=09/day=30/AAPL-2024-09-30.parquet
+# Financial statements (NDJSON - per symbol)
+aws s3 ls s3://your-bucket/raw/fmp/statements/income/ --recursive
+# Expected: raw/fmp/statements/income/dt=2024-10-24/symbol=AAPL/AAPL-income-2024-10-24.ndjson
+
+# Treasury rates (NDJSON - market-wide)
+aws s3 ls s3://your-bucket/raw/fmp/treasury_rates/ --recursive
+# Expected: raw/fmp/treasury_rates/dt=2024-10-24/treasury-rates-2024-10-24.ndjson
 ```
 
 ---
@@ -88,37 +108,62 @@ aws s3 ls s3://your-bucket/raw/prices/ --recursive
 ```
 Local/GitHub Actions      S3 Raw Zone              Databricks
 ┌─────────────────┐       ┌──────────────┐         ┌─────────────────┐
-│ FMP API         │       │ Day-level    │         │ Auto Loader     │
-│ (async fetch)   │──────▶│ Parquet      │────────▶│ → Bronze (CDF)  │
-│ polars/pyarrow  │       │ partitions   │         │ → Silver/Gold   │
+│ FMP API         │       │ Parquet +    │         │ Auto Loader     │
+│ (async fetch)   │──────▶│ NDJSON       │────────▶│ → Bronze (CDF)  │
+│ polars/pyarrow  │       │ dt= parts    │         │ → Silver/Gold   │
 └─────────────────┘       └──────────────┘         └─────────────────┘
 ```
 
 **Key principle:** API wait time runs locally (free), Databricks only for data transformations (cost-optimized).
+
+**Data formats:**
+- **Prices**: Parquet (all symbols combined per day, locked schema)
+- **Statements**: NDJSON (raw JSON payloads, flexible schema)
 
 ---
 
 ## 📊 What Gets Ingested
 
 ### Price Data (Daily OHLCV)
-- Date, Open, High, Low, Close, Adj Close, Volume
-- Partitioned by: `symbol/year/month/day`
-- One Parquet file per symbol per day
+- Symbol, Date, Open, High, Low, Close, Volume
+- Metadata: fetched_at, source, endpoint, request_id, file_hash
+- Partitioned by: `dt=YYYY-MM-DD`
+- Format: Parquet (all symbols combined per day)
+- S3 Path: `raw/fmp/prices/dt=2024-10-24/prices-2024-10-24.parquet`
 
-### Fundamentals (Future)
-- Income statements, balance sheets, cash flow (annual)
-- Partitioned by: `type/symbol/year/docdate`
+### Financial Statements (Annual)
+- **Income Statement**: Revenue, expenses, net income (5 years)
+- **Balance Sheet**: Assets, liabilities, equity (5 years)
+- **Cash Flow**: Operating, investing, financing activities (5 years)
+- **Owner Earnings**: Buffett-style owner earnings calculation (5 years)
+- Partitioned by: `dt=YYYY-MM-DD/symbol=X`
+- Format: NDJSON (preserves raw JSON payloads)
+- S3 Path: `raw/fmp/statements/{type}/dt=2024-10-24/symbol=AAPL/AAPL-{type}-2024-10-24.ndjson`
+
+### Treasury Rates (Daily)
+- Full yield curve (1M, 3M, 6M, 1Y, 2Y, 3Y, 5Y, 7Y, 10Y, 30Y)
+- Partitioned by: `dt=YYYY-MM-DD`
+- Format: NDJSON
+- S3 Path: `raw/fmp/treasury_rates/dt=2024-10-24/treasury-rates-2024-10-24.ndjson`
 
 ---
 
 ## 🤖 GitHub Actions (Automated)
 
-The pipeline runs automatically Monday-Friday at 11 PM UTC (after US market close).
+The unified ingestion workflow runs automatically Monday-Friday at 11 PM UTC (after US market close).
+
+**Jobs (sequential execution):**
+1. **ingest-prices** - Fetch price data → Parquet
+2. **ingest-statements** - Fetch financial statements → NDJSON
+3. **workflow-summary** - Generate combined summary
 
 **Manual trigger:**
-1. Go to **Actions** → **Stock Data Ingestion**
+1. Go to **Actions** → **FMP Data Ingestion**
 2. Click **Run workflow**
-3. Configure: tickers, dates, backfill days, force overwrite
+3. Configure parameters:
+   - **Price settings**: tickers path, date range, backfill days
+   - **Statements settings**: snapshot date, endpoints (all/specific)
+   - **force**: Overwrite existing files
 
 See [docs/ingestion_quickstart.md](docs/ingestion_quickstart.md) for full details.
 
@@ -143,20 +188,43 @@ pytest tests/test_ingest_local.py::TestPolarsTransformations -v
 
 Once raw data lands in S3, configure Databricks Auto Loader:
 
-```sql
--- Auto-load from S3 → Bronze Delta table
-CREATE OR REFRESH STREAMING LIVE TABLE bronze_prices
-AS SELECT * FROM cloud_files(
-  's3://your-bucket/raw/prices/',
-  'parquet',
-  map('cloudFiles.schemaLocation', 's3://your-bucket/schemas/prices/')
-);
+**Price Data (Parquet):**
+```python
+# Read with Auto Loader
+df = (spark.readStream
+    .format("cloudFiles")
+    .option("cloudFiles.format", "parquet")
+    .option("cloudFiles.inferColumnTypes", "true")
+    .option("cloudFiles.schemaLocation", f"{checkpoint_path}/schema")
+    .load("s3://your-bucket/raw/fmp/prices/"))
 
--- Bronze → Silver (deduplication, quality checks)
-MERGE INTO silver.prices ...
+# Write to Bronze Delta (append-only, CDF enabled)
+(df.writeStream
+    .format("delta")
+    .option("checkpointLocation", f"{checkpoint_path}/stream")
+    .partitionBy("as_of_date")
+    .trigger(availableNow=True)
+    .start("s3://your-bucket/bronze/prices/"))
+```
 
--- Silver → Gold (features, aggregations)
-CREATE VIEW gold.price_features AS ...
+**Financial Statements (NDJSON):**
+```python
+# Read NDJSON with Auto Loader
+df = (spark.readStream
+    .format("cloudFiles")
+    .option("cloudFiles.format", "json")  # NDJSON = JSON lines
+    .option("cloudFiles.inferColumnTypes", "true")
+    .option("cloudFiles.schemaLocation", f"{checkpoint_path}/schema")
+    .load("s3://your-bucket/raw/fmp/statements/income/"))
+
+# De-dupe and write to Bronze
+(df.dropDuplicates(["symbol", "endpoint", "fiscal_period_end", "as_of_date", "hash"])
+    .writeStream
+    .format("delta")
+    .option("checkpointLocation", f"{checkpoint_path}/stream")
+    .partitionBy("as_of_date", "symbol")
+    .trigger(availableNow=True)
+    .start("s3://your-bucket/bronze/fmp_income/"))
 ```
 
 See [databricks/DATABRICKS_SETUP.md](databricks/DATABRICKS_SETUP.md) for complete setup.
@@ -166,9 +234,9 @@ See [databricks/DATABRICKS_SETUP.md](databricks/DATABRICKS_SETUP.md) for complet
 ## 🆘 Common Issues
 
 **FMP API rate limit errors (429)?**
-- Increase `RATE_LIMIT_SECONDS` to `20.0` or higher
-- Reduce `MAX_WORKERS` to process fewer symbols concurrently
-- Free tier: 250 calls/day
+- **Free tier**: 250 calls/day - set `RATE_LIMIT_SECONDS=15.0` or higher
+- **Paid tier**: 300 calls/minute - set `RATE_LIMIT_SECONDS=0.2` (default)
+- Reduce `MAX_WORKERS` to process fewer symbols concurrently if needed
 
 **S3 permission errors?**
 - Verify IAM role has `s3:PutObject`, `s3:GetObject`, `s3:ListBucket`

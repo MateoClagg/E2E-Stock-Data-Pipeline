@@ -1,6 +1,6 @@
 # 🚀 Ingestion Quickstart
 
-**Local async ingestion** for cost-optimized data pipeline: API calls run locally/GitHub Actions (not Databricks), writes day-partitioned Parquet to S3.
+**Local async ingestion** for cost-optimized data pipeline: API calls run locally/GitHub Actions (not Databricks), writes to S3 for Auto Loader ingestion.
 
 ---
 
@@ -9,9 +9,9 @@
 ```
 Local/GitHub Actions      S3 Raw Zone              Databricks
 ┌─────────────────┐       ┌──────────────┐         ┌─────────────────┐
-│ FMP API         │       │ Day-level    │         │ Auto Loader     │
-│ (async fetch)   │──────▶│ Parquet      │────────▶│ → Bronze (CDF)  │
-│ polars/pyarrow  │       │ partitions   │         │ → Silver/Gold   │
+│ FMP API         │       │ Parquet +    │         │ Auto Loader     │
+│ (async fetch)   │──────▶│ NDJSON       │────────▶│ → Bronze (CDF)  │
+│ polars/pyarrow  │       │ dt= parts    │         │ → Silver/Gold   │
 └─────────────────┘       └──────────────┘         └─────────────────┘
 ```
 
@@ -21,50 +21,61 @@ Local/GitHub Actions      S3 Raw Zone              Databricks
 
 ## 🗂️ S3 Layout
 
-### Prices (Daily OHLCV)
-
-**Backfill mode** (yearly Parquet files):
+### Prices (OHLCV - Parquet)
 ```
-s3://{S3_BUCKET}/raw/prices/
-  symbol=AAPL/
-    year=2020/
-      AAPL-2020.parquet  ← All trading days for 2020
-    year=2021/
-      AAPL-2021.parquet
+s3://{S3_BUCKET}/raw/fmp/prices/
+  dt=2024-10-24/
+    prices-2024-10-24.parquet  ← All symbols combined (100+ rows)
+  dt=2024-10-25/
+    prices-2024-10-25.parquet
 ```
 
-**Daily mode** (incremental ingestion):
+**Schema:**
+- `symbol`, `as_of_date`, `open`, `high`, `low`, `close`, `volume`
+- `fetched_at`, `source`, `endpoint`, `request_id`, `file_hash`
+
+### Financial Statements (NDJSON)
 ```
-s3://{S3_BUCKET}/raw/prices/
-  symbol=AAPL/
-    year=2024/
-      month=09/
-        AAPL-2024-09-15.parquet  ← Single file per day
-        AAPL-2024-09-16.parquet
+s3://{S3_BUCKET}/raw/fmp/
+  owner_earnings/
+    dt=2024-10-24/
+      symbol=AAPL/
+        AAPL-owner-earnings-2024-10-24.ndjson
+  statements/
+    income/
+      dt=2024-10-24/
+        symbol=AAPL/
+          AAPL-income-2024-10-24.ndjson
+    balance_sheet/
+      dt=2024-10-24/
+        symbol=AAPL/
+          AAPL-balance-2024-10-24.ndjson
+    cash_flow/
+      dt=2024-10-24/
+        symbol=AAPL/
+          AAPL-cashflow-2024-10-24.ndjson
 ```
 
-### Fundamentals (Future)
+**Schema:**
+- `symbol`, `as_of_date`, `endpoint`, `payload` (raw JSON)
+- `fetched_at`, `source`, `http_status`, `request_id`
+- `fiscal_period_end`, `filing_date`, `hash`
+
+### Treasury Rates (NDJSON)
 ```
-s3://{S3_BUCKET}/raw/fundamentals/
-  type=income/
-    symbol=AAPL/
-      year=2024/
-        docdate=2024-09-30/
-          AAPL-2024-09-30.parquet
+s3://{S3_BUCKET}/raw/fmp/treasury_rates/
+  dt=2024-10-24/
+    treasury-rates-2024-10-24.ndjson
 ```
 
 ### Logs & Metrics
 ```
 s3://{S3_BUCKET}/logs/ingest/
-  date=2024-09-30/
-    run-1727740800.json  ← Metrics for each run
+  date=2024-10-24/
+    prices-run-1729807200.json
+    owner-earnings-run-1729807300.json
+    run-1729807400.json
 ```
-
-**Partitioning strategy:**
-- **Backfill mode (`--backfill`)**: Writes one Parquet file per symbol/year (optimized for historical data)
-- **Daily mode (default)**: Writes one Parquet file per symbol/day (optimized for incremental ingestion)
-- Each file contains `ingest_ts` column for lineage tracking
-- Idempotent: skips existing files unless `--force`
 
 ---
 
@@ -81,9 +92,9 @@ export AWS_DEFAULT_REGION="us-east-1"
 
 Optional:
 ```bash
-export S3_RAW_PREFIX="raw"                    # Default: raw
-export RATE_LIMIT_SECONDS="15.0"              # FMP free tier: ~12-15s
-export MAX_WORKERS="5"                        # Concurrent symbol processing
+export S3_RAW_PREFIX="raw/fmp"                # Default: raw/fmp
+export RATE_LIMIT_SECONDS="0.2"               # FMP paid tier: 0.1-0.2s
+export MAX_WORKERS="10"                       # Concurrent symbol processing
 ```
 
 ---
@@ -92,81 +103,105 @@ export MAX_WORKERS="5"                        # Concurrent symbol processing
 
 ### 1. Install Dependencies
 ```bash
-pip install aiohttp tenacity polars pyarrow boto3 python-dotenv pandas pandas-market-calendars
+pip install aiohttp tenacity polars pyarrow boto3 python-dotenv
 ```
 
-### 2. Daily Ingestion (Default)
+### 2. Price Data Ingestion
+
+**Daily (default - yesterday's data):**
 ```bash
-# Fetch yesterday's data for tickers in stock_pipeline/config/tickers.csv
-python stock_pipeline/scripts/ingest_local_to_s3.py
+python stock_pipeline/scripts/ingest_fmp_prices.py
 ```
 
-### 3. Custom Tickers
+**Custom tickers:**
 ```bash
 # Local file
-python stock_pipeline/scripts/ingest_local_to_s3.py \
+python stock_pipeline/scripts/ingest_fmp_prices.py \
   --tickers-path my_tickers.csv
 
 # S3 file
-python stock_pipeline/scripts/ingest_local_to_s3.py \
+python stock_pipeline/scripts/ingest_fmp_prices.py \
   --tickers-path s3://my-bucket/tickers/watchlist.csv
 ```
 
-### 4. Backfill
-
-**Historical backfill (yearly partitions):**
+**Backfill:**
 ```bash
-# 5 years of historical data (~1825 days)
-python stock_pipeline/scripts/ingest_local_to_s3.py \
-  --backfill \
-  --backfill-days 1825
+# Last 30 days
+python stock_pipeline/scripts/ingest_fmp_prices.py --backfill-days 30
 
-# Custom date range with yearly partitions
-python stock_pipeline/scripts/ingest_local_to_s3.py \
-  --backfill \
-  --from-date 2020-01-01 \
-  --to-date 2024-12-31
+# Custom date range
+python stock_pipeline/scripts/ingest_fmp_prices.py \
+  --from-date 2024-01-01 \
+  --to-date 2024-10-24
 
-# Force overwrite existing files
-python stock_pipeline/scripts/ingest_local_to_s3.py \
-  --backfill \
-  --backfill-days 1825 \
+# Force overwrite
+python stock_pipeline/scripts/ingest_fmp_prices.py \
+  --backfill-days 30 \
   --force
 ```
 
-**Recent backfill (daily partitions):**
+### 3. Statements & Metrics Ingestion
+
+**All endpoints (default):**
 ```bash
-# Last 30 days (daily files for recent data)
-python stock_pipeline/scripts/ingest_local_to_s3.py \
-  --backfill-days 30
+python stock_pipeline/scripts/fmp_dump_raw.py --endpoints all
 ```
 
-**Performance:**
-- Backfill mode: 5 years of data for 10 tickers in ~12 seconds (writes ~50 yearly files)
-- Daily mode: Same data takes ~9000 seconds (writes ~12,500 daily files)
+**Specific endpoints:**
+```bash
+# Only income statements
+python stock_pipeline/scripts/fmp_dump_raw.py --endpoints income
+
+# Multiple endpoints
+python stock_pipeline/scripts/fmp_dump_raw.py \
+  --endpoints income,balance_sheet,cash_flow
+
+# Treasury rates only
+python stock_pipeline/scripts/fmp_dump_raw.py --endpoints treasury_rates
+```
+
+**Custom date:**
+```bash
+# Specific snapshot date
+python stock_pipeline/scripts/fmp_dump_raw.py \
+  --date 2024-10-24 \
+  --endpoints all
+
+# Force overwrite
+python stock_pipeline/scripts/fmp_dump_raw.py \
+  --date 2024-10-24 \
+  --endpoints all \
+  --force
+```
 
 ---
 
 ## 🤖 GitHub Actions
 
-### Nightly Ingestion (Automatic)
-Runs Monday-Friday at 11 PM UTC (after US market close).
+### Unified Workflow
+Single workflow runs **both** price and statements ingestion sequentially.
 
-Configured in `.github/workflows/ingest.yml`:
-```yaml
-schedule:
-  - cron: '0 23 * * 1-5'  # Mon-Fri 11 PM UTC
-```
+**File:** `.github/workflows/ingest.yml`
+
+**Schedule:** Monday-Friday at 11 PM UTC (after US market close)
+
+**Jobs:**
+1. `ingest-prices` - Fetch OHLCV price data → Parquet
+2. `ingest-statements` - Fetch financial statements → NDJSON
+3. `workflow-summary` - Generate combined summary
 
 ### Manual Dispatch
+
 Trigger via GitHub UI:
 
-1. Go to **Actions** → **Stock Data Ingestion**
+1. Go to **Actions** → **FMP Data Ingestion**
 2. Click **Run workflow**
 3. Configure parameters:
-   - **tickers_path**: `stock_pipeline/config/tickers.csv` (default) or `s3://...`
-   - **from_date / to_date**: Custom date range
-   - **backfill_days**: Quick backfill (e.g., `30`)
+   - **tickers_path**: `stock_pipeline/config/tickers.csv` (default)
+   - **from_date / to_date**: Price date range
+   - **backfill_days**: Quick price backfill (e.g., `30`)
+   - **snapshot_date**: Statements snapshot date (`today` default)
+   - **endpoints**: Which FMP endpoints (`all` default)
    - **force**: `true` to overwrite existing files
 
 **GitHub Secrets Required:**
@@ -176,141 +211,135 @@ Trigger via GitHub UI:
 
 **GitHub Variables Required:**
 - `S3_BUCKET`
-- `S3_RAW_PREFIX` (optional, default: `raw`)
-- `RATE_LIMIT_SECONDS` (optional, default: `15.0`)
-- `MAX_WORKERS` (optional, default: `5`)
+- `S3_RAW_PREFIX` (optional, default: `raw/fmp`)
+- `RATE_LIMIT_SECONDS` (optional, default: `0.2`)
+- `MAX_WORKERS` (optional, default: `10`)
 
 ---
 
-## 🔒 Idempotency & Safety
+## 🔒 Data Quality & Safety
 
-### File-Level Idempotency
-Before writing, checks if the target S3 file exists:
-- **Backfill mode**: Checks `s3://.../symbol=X/year=Y/X-Y.parquet`
-- **Daily mode**: Checks `s3://.../symbol=X/year=Y/month=M/X-Y-M-D.parquet`
+### Price Data
+- ✅ Locked schema (12 columns, prevents drift)
+- ✅ Row-level de-dupe by `(symbol, as_of_date)`
+- ✅ File-level hash for lineage
+- ✅ Validated: non-null symbol/date, non-negative volume
+- ✅ Combined files: All symbols per day in one Parquet
 
-Behavior:
-- **Exists + no `--force`**: Skip silently (no terminal output)
-- **Exists + `--force`**: Overwrite
-- **Does not exist**: Write
+### Statements Data
+- ✅ Raw JSON payload preserved (no flattening in Bronze)
+- ✅ Metadata enrichment (timestamps, hashes, fiscal dates)
+- ✅ NDJSON format for schema flexibility
+- ✅ De-dupe by `(symbol, endpoint, fiscal_period_end, as_of_date, hash)`
 
-**Backfills and daily increments coexist safely** — yearly and daily files are stored in different S3 paths.
-
-### Data Validation (Polars)
-Before writing, each day's DataFrame is validated:
-- ✅ Non-null `symbol`, `date`
-- ✅ Non-negative `volume`
-- ✅ Sorted by `date` descending
-
-Invalid rows are filtered out with warnings.
+### Idempotency
+- Checks if S3 file exists before writing
+- **Default behavior**: Skip if exists
+- **With `--force`**: Overwrite
+- File paths include date partitions for deterministic writes
 
 ---
 
 ## 📋 Metrics & Monitoring
 
-After each run, `metrics.json` is written to:
-```
-s3://{S3_BUCKET}/logs/ingest/date={YYYY-MM-DD}/run-{unix_ts}.json
-```
-
-**Contents:**
+### Price Metrics
 ```json
 {
-  "run_id": "2024-09-30T23:00:00+00:00",
-  "date_range": {"from": "2024-09-29", "to": "2024-09-29"},
-  "symbols_processed": 10,
-  "files_written": 10,
-  "rows_written": 10,
+  "run_id": "2024-10-24T23:00:00Z",
+  "data_type": "prices",
+  "endpoint": "historical-price-full",
+  "symbols_processed": 100,
+  "files_written": 5,
+  "rows_written": 500,
   "errors": 0,
   "duration_seconds": 45.2,
-  "results": [
-    {
-      "symbol": "AAPL",
-      "files_written": 1,
-      "rows_written": 1,
-      "errors": []
-    }
-  ]
+  "s3_prefix": "s3://bucket/raw/fmp/prices/"
 }
 ```
 
-**GitHub Actions logs** also display a summary:
+### Statements Metrics
+```json
+{
+  "run_id": "2024-10-24T23:00:00Z",
+  "data_type": "owner_earnings",
+  "symbols_processed": 100,
+  "files_written": 100,
+  "records_written": 500,
+  "errors": 0,
+  "duration_seconds": 120.5
+}
 ```
-✅ Ingestion Complete
-============================================================
-📊 Symbols: 10
-📁 Files written: 10
-📝 Rows written: 10
-❌ Errors: 0
-⏱️  Duration: 45.2s
-📋 Metrics: s3://my-bucket/logs/ingest/date=2024-09-30/run-1727740800.json
-============================================================
+
+**GitHub Actions Summary:**
+```
+## FMP Data Ingestion Summary
+
+### Price Data
+- Tickers: stock_pipeline/config/tickers.csv
+- S3 Prefix: raw/fmp/prices/
+
+### Statements Data
+- Snapshot Date: today
+- Endpoints: all
+- S3 Prefix: raw/fmp/statements/
+
+✅ Ingestion completed. Check S3 for output files and metrics.
 ```
 
 ---
 
 ## 🔗 Next Steps: Databricks Integration
 
-Once raw data is in S3, configure Databricks **Auto Loader** to ingest into Bronze layer:
+### Price Data Auto Loader
+```python
+bucket = "s3://stock-pipeline-data-dev-mc"
+raw_path = f"{bucket}/raw/fmp/prices/"
+bronze_path = f"{bucket}/bronze/prices/"
+ckpt_path = f"{bucket}/_checkpoints/bronze_prices/"
 
-### 1. Auto Loader to Bronze (Streaming)
-```sql
--- Create Bronze table with Change Data Feed (CDF)
-CREATE TABLE IF NOT EXISTS bronze.prices (
-  symbol STRING,
-  date DATE,
-  open DOUBLE,
-  high DOUBLE,
-  low DOUBLE,
-  close DOUBLE,
-  adjClose DOUBLE,
-  volume BIGINT,
-  ingest_ts TIMESTAMP
-)
-USING DELTA
-TBLPROPERTIES (delta.enableChangeDataFeed = true)
-PARTITIONED BY (symbol, date);
+# Read with Auto Loader
+df = (spark.readStream
+    .format("cloudFiles")
+    .option("cloudFiles.format", "parquet")
+    .option("cloudFiles.inferColumnTypes", "true")
+    .option("cloudFiles.schemaLocation", f"{ckpt_path}/schema")
+    .load(raw_path))
 
--- Auto Loader stream from S3 raw zone
-CREATE OR REFRESH STREAMING LIVE TABLE bronze_prices_stream
-AS SELECT * FROM cloud_files(
-  's3://{{S3_BUCKET}}/raw/prices/',
-  'parquet',
-  map('cloudFiles.schemaLocation', 's3://{{S3_BUCKET}}/schemas/prices/')
-);
+# Write to Delta (append-only, partitioned by date)
+(df.writeStream
+    .format("delta")
+    .option("checkpointLocation", f"{ckpt_path}/stream")
+    .option("mergeSchema", "true")
+    .partitionBy("as_of_date")
+    .trigger(availableNow=True)
+    .start(bronze_path))
 ```
 
-### 2. Bronze → Silver (Deduplication + Quality)
-```sql
-MERGE INTO silver.prices AS target
-USING (
-  SELECT DISTINCT
-    symbol,
-    date,
-    open, high, low, close, adjClose, volume,
-    ingest_ts,
-    ROW_NUMBER() OVER (PARTITION BY symbol, date ORDER BY ingest_ts DESC) AS rn
-  FROM bronze.prices
-) AS source
-ON target.symbol = source.symbol AND target.date = source.date
-WHEN MATCHED AND source.rn = 1 THEN UPDATE SET *
-WHEN NOT MATCHED AND source.rn = 1 THEN INSERT *;
-```
+### Statements Auto Loader
+```python
+raw_path = f"{bucket}/raw/fmp/statements/income/"
+bronze_path = f"{bucket}/bronze/fmp_income/"
+ckpt_path = f"{bucket}/_checkpoints/bronze_fmp_income/"
 
-### 3. Silver → Gold (Features)
-```sql
--- Price-based features for ML
-CREATE OR REPLACE VIEW gold.price_features AS
-SELECT
-  symbol,
-  date,
-  close,
-  -- Moving averages
-  AVG(close) OVER (PARTITION BY symbol ORDER BY date ROWS BETWEEN 19 PRECEDING AND CURRENT ROW) AS ma_20,
-  AVG(close) OVER (PARTITION BY symbol ORDER BY date ROWS BETWEEN 49 PRECEDING AND CURRENT ROW) AS ma_50,
-  -- Volatility
-  STDDEV(close) OVER (PARTITION BY symbol ORDER BY date ROWS BETWEEN 19 PRECEDING AND CURRENT ROW) AS volatility_20d
-FROM silver.prices;
+# Read NDJSON with Auto Loader
+df = (spark.readStream
+    .format("cloudFiles")
+    .option("cloudFiles.format", "json")
+    .option("cloudFiles.inferColumnTypes", "true")
+    .option("cloudFiles.schemaLocation", f"{ckpt_path}/schema")
+    .load(raw_path))
+
+# De-dupe and write
+df_deduped = df.dropDuplicates(["symbol", "endpoint", "fiscal_period_end", "as_of_date", "hash"])
+
+(df_deduped.writeStream
+    .format("delta")
+    .option("checkpointLocation", f"{ckpt_path}/stream")
+    .option("mergeSchema", "true")
+    .partitionBy("as_of_date", "symbol")
+    .outputMode("append")
+    .trigger(availableNow=True)
+    .start(bronze_path))
 ```
 
 ---
@@ -319,20 +348,26 @@ FROM silver.prices;
 
 ### No data returned from API
 - Verify `FMP_API_KEY` is valid
-- Check FMP account limits (free tier: 250 calls/day)
+- Check FMP account limits (paid tier recommended)
 - Try a different ticker (e.g., `AAPL` always works)
 
 ### S3 permission errors
-- Ensure IAM role/user has `s3:PutObject`, `s3:GetObject`, `s3:ListBucket` on `S3_BUCKET`
-- For GitHub Actions: verify `AWS_ROLE_ARN` has correct trust policy for OIDC
+- Ensure IAM role/user has `s3:PutObject`, `s3:GetObject`, `s3:ListBucket`
+- For GitHub Actions: verify `AWS_ROLE_ARN` OIDC trust policy
 
 ### Rate limit errors (429)
-- Increase `RATE_LIMIT_SECONDS` (e.g., `20.0` for extra buffer)
-- Reduce `MAX_WORKERS` (fewer concurrent symbols)
+- Increase `RATE_LIMIT_SECONDS` (e.g., `1.0`)
+- Reduce `MAX_WORKERS` (e.g., `5`)
+- FMP paid tier allows 0.1-0.2s rate limiting
 
-### Validation failures
-- Check FMP response format (API may return errors as `{"Error Message": "..."}`)
+### Validation failures (prices)
+- Check FMP response format
 - Inspect logs for `⚠️ No valid data after validation`
+- Verify date range doesn't include weekends/holidays
+
+### Hash computation errors
+- Fixed in latest version (uses `to_pandas().to_csv()` not `write_csv()`)
+- Re-run with `--force` if seeing stale data
 
 ---
 
@@ -341,7 +376,6 @@ FROM silver.prices;
 - [FMP API Docs](https://site.financialmodelingprep.com/developer/docs)
 - [Polars DataFrame Guide](https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/index.html)
 - [Databricks Auto Loader](https://docs.databricks.com/ingestion/auto-loader/index.html)
-- [pandas-market-calendars](https://github.com/rsheftel/pandas_market_calendars)
 
 ---
 

@@ -50,14 +50,19 @@ export S3_BUCKET="your-bucket"
 export AWS_ACCESS_KEY_ID="..."
 export AWS_SECRET_ACCESS_KEY="..."
 
-# 3. Run local ingestion (yesterday's data)
-python stock_pipeline/scripts/ingest_local_to_s3.py
+# 3. Run local ingestion (yesterday's price data)
+python stock_pipeline/scripts/ingest_fmp_prices.py
 
-# 4. Backfill historical data
-python stock_pipeline/scripts/ingest_local_to_s3.py --backfill-days 30
+# 4. Backfill historical price data
+python stock_pipeline/scripts/ingest_fmp_prices.py --backfill-days 30
+
+# 5. Ingest financial statements (income, balance sheet, cash flow, owner earnings)
+python stock_pipeline/scripts/fmp_dump_raw.py --endpoints all
 ```
 
-**Output:** Day-partitioned Parquet in `s3://{bucket}/raw/prices/symbol=X/year=Y/month=M/day=D/`
+**Output:**
+- Prices: `s3://{bucket}/raw/fmp/prices/dt=YYYY-MM-DD/prices-YYYY-MM-DD.parquet`
+- Statements: `s3://{bucket}/raw/fmp/statements/{type}/dt=YYYY-MM-DD/symbol=X/X-{type}-YYYY-MM-DD.ndjson`
 
 **Monthly Cost**: ~$50 total (FMP API: $30, S3: <$10, Databricks: <$10)
 
@@ -79,7 +84,8 @@ graph LR
 📦 stock-pipeline/
 ├── 📊 stock_pipeline/
 │   ├── scripts/
-│   │   ├── ingest_local_to_s3.py   # Main ingestion script (async + polars)
+│   │   ├── ingest_fmp_prices.py    # Price data ingestion (async + polars)
+│   │   ├── fmp_dump_raw.py         # FMP statements ingestion (NDJSON)
 │   │   └── utils/
 │   │       └── dates.py            # Trading calendar utilities
 │   └── config/
@@ -89,7 +95,7 @@ graph LR
 ├── 📊 docs/
 │   └── ingestion_quickstart.md     # Complete ingestion guide
 └── ⚙️ .github/workflows/
-    └── ingest.yml                   # Nightly cron + manual dispatch
+    └── ingest.yml                   # Unified FMP ingestion workflow
 ```
 
 **Note:** Bronze/Silver/Gold transformations live in Databricks (not in this repo).
@@ -115,13 +121,14 @@ pip install -e .
 pytest tests/test_ingest_local.py -v
 
 # Test locally with your FMP key
-python stock_pipeline/scripts/ingest_local_to_s3.py --tickers-path stock_pipeline/config/tickers.csv
+python stock_pipeline/scripts/ingest_fmp_prices.py --tickers-path stock_pipeline/config/tickers.csv
+python stock_pipeline/scripts/fmp_dump_raw.py --endpoints all
 ```
 
 ### **CI/CD Pipeline**
 - **PR Builds**: Fast validation - linting, imports, unit tests
 - **Main Builds**: Full test suite + S3 wheel uploads
-- **Ingestion Workflow**: Nightly cron (Mon-Fri 11 PM UTC) + manual dispatch
+- **Ingestion Workflow**: Unified FMP ingestion (prices + statements) - Nightly at 11 PM UTC Mon-Fri + manual dispatch
 
 ## 📋 **Requirements**
 
