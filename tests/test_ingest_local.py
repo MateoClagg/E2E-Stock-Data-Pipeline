@@ -15,12 +15,10 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "stock_pipeline" / "scripts"))
 
-from ingest_local_to_s3 import (
+from ingest_fmp_prices import (
     build_s3_key_daily,
-    build_s3_key_yearly,
     prices_to_polars,
     group_by_day,
-    group_by_year,
 )
 
 
@@ -28,27 +26,15 @@ class TestS3KeyBuilder:
     """Test S3 key generation for day-level partitioning."""
 
     def test_build_s3_key_daily(self):
-        """Test daily S3 key structure."""
-        key = build_s3_key_daily("AAPL", "2024-09-15")
-        expected = "raw/prices/symbol=AAPL/year=2024/month=09/AAPL-2024-09-15.parquet"
+        """Test daily S3 key structure (all symbols combined per day)."""
+        key = build_s3_key_daily("2024-09-15")
+        expected = "raw/fmp/prices/dt=2024-09-15/prices-2024-09-15.parquet"
         assert key == expected
 
     def test_build_s3_key_daily_custom_prefix(self):
         """Test custom S3 prefix for daily."""
-        key = build_s3_key_daily("MSFT", "2024-01-01", prefix="staging/prices")
-        expected = "staging/prices/symbol=MSFT/year=2024/month=01/MSFT-2024-01-01.parquet"
-        assert key == expected
-
-    def test_build_s3_key_yearly(self):
-        """Test yearly S3 key structure for backfill."""
-        key = build_s3_key_yearly("AAPL", 2024)
-        expected = "raw/prices/symbol=AAPL/year=2024/AAPL-2024.parquet"
-        assert key == expected
-
-    def test_build_s3_key_yearly_custom_prefix(self):
-        """Test custom S3 prefix for yearly."""
-        key = build_s3_key_yearly("TSLA", 2023, prefix="staging/prices")
-        expected = "staging/prices/symbol=TSLA/year=2023/TSLA-2023.parquet"
+        key = build_s3_key_daily("2024-01-01", prefix="staging/fmp/prices")
+        expected = "staging/fmp/prices/dt=2024-01-01/prices-2024-01-01.parquet"
         assert key == expected
 
 
@@ -81,14 +67,18 @@ class TestPolarsTransformations:
 
     def test_prices_to_polars_basic(self, sample_fmp_prices):
         """Test conversion from FMP JSON to Polars DataFrame."""
-        ingest_ts = datetime.now(timezone.utc)
-        df = prices_to_polars("AAPL", sample_fmp_prices, ingest_ts)
+        fetched_at = datetime.now(timezone.utc)
+        request_id = "test-request-123"
+        df = prices_to_polars("AAPL", sample_fmp_prices, fetched_at, request_id)
 
         assert not df.is_empty()
         assert len(df) == 2
         assert "symbol" in df.columns
-        assert "ingest_ts" in df.columns
+        assert "fetched_at" in df.columns
+        assert "request_id" in df.columns
+        assert "file_hash" in df.columns
         assert df["symbol"][0] == "AAPL"
+        assert df["request_id"][0] == request_id
 
     def test_prices_to_polars_validation_filters_invalid(self):
         """Test that invalid rows are filtered out."""
@@ -119,52 +109,61 @@ class TestPolarsTransformations:
             },
         ]
 
-        ingest_ts = datetime.now(timezone.utc)
-        df = prices_to_polars("TEST", invalid_prices, ingest_ts)
+        fetched_at = datetime.now(timezone.utc)
+        request_id = "test-request"
+        df = prices_to_polars("TEST", invalid_prices, fetched_at, request_id)
 
         # Only 1 valid row should remain
         assert len(df) == 1
-        assert df["date"][0] == "2024-09-15"
+        assert df["as_of_date"][0] == "2024-09-15"
 
     def test_prices_to_polars_empty_input(self):
         """Test handling of empty price list."""
-        ingest_ts = datetime.now(timezone.utc)
-        df = prices_to_polars("EMPTY", [], ingest_ts)
+        fetched_at = datetime.now(timezone.utc)
+        request_id = "test-request"
+        df = prices_to_polars("EMPTY", [], fetched_at, request_id)
 
         assert df.is_empty()
 
     def test_prices_to_polars_sorted_by_date(self, sample_fmp_prices):
         """Test that DataFrame is sorted by date descending."""
-        ingest_ts = datetime.now(timezone.utc)
-        df = prices_to_polars("AAPL", sample_fmp_prices, ingest_ts)
+        fetched_at = datetime.now(timezone.utc)
+        request_id = "test-request"
+        df = prices_to_polars("AAPL", sample_fmp_prices, fetched_at, request_id)
 
-        dates = df["date"].to_list()
+        dates = df["as_of_date"].to_list()
         assert dates == sorted(dates, reverse=True)
 
 
 class TestGroupByDay:
-    """Test grouping DataFrame by trade date."""
+    """Test grouping DataFrame by trade date (combines all symbols per day)."""
 
     def test_group_by_day_basic(self):
         """Test basic grouping by day."""
-        df = pl.DataFrame({
-            "symbol": ["AAPL", "AAPL", "AAPL"],
-            "date": ["2024-09-15", "2024-09-14", "2024-09-15"],
-            "close": [228.03, 225.77, 228.50],
-        })
+        dfs = [
+            pl.DataFrame({
+                "symbol": ["AAPL", "AAPL"],
+                "as_of_date": ["2024-09-15", "2024-09-14"],
+                "close": [228.03, 225.77],
+            }),
+            pl.DataFrame({
+                "symbol": ["MSFT"],
+                "as_of_date": ["2024-09-15"],
+                "close": [420.50],
+            }),
+        ]
 
-        grouped = group_by_day(df)
+        grouped = group_by_day(dfs)
 
         assert len(grouped) == 2
         assert "2024-09-15" in grouped
         assert "2024-09-14" in grouped
-        assert len(grouped["2024-09-15"]) == 2
-        assert len(grouped["2024-09-14"]) == 1
+        assert len(grouped["2024-09-15"]) == 2  # AAPL + MSFT
+        assert len(grouped["2024-09-14"]) == 1  # AAPL only
 
-    def test_group_by_day_empty_df(self):
-        """Test grouping empty DataFrame."""
-        df = pl.DataFrame()
-        grouped = group_by_day(df)
+    def test_group_by_day_empty_list(self):
+        """Test grouping empty list."""
+        grouped = group_by_day([])
 
         assert len(grouped) == 0
 
@@ -177,8 +176,9 @@ class TestDataValidation:
         prices = [
             {"date": "2024-09-15", "open": 100, "high": 105, "low": 99, "close": 102, "volume": -1000},
         ]
-        ingest_ts = datetime.now(timezone.utc)
-        df = prices_to_polars("TEST", prices, ingest_ts)
+        fetched_at = datetime.now(timezone.utc)
+        request_id = "test-request"
+        df = prices_to_polars("TEST", prices, fetched_at, request_id)
 
         assert df.is_empty()
 
@@ -187,8 +187,9 @@ class TestDataValidation:
         prices = [
             {"date": None, "open": 100, "high": 105, "low": 99, "close": 102, "volume": 1000},
         ]
-        ingest_ts = datetime.now(timezone.utc)
-        df = prices_to_polars("TEST", prices, ingest_ts)
+        fetched_at = datetime.now(timezone.utc)
+        request_id = "test-request"
+        df = prices_to_polars("TEST", prices, fetched_at, request_id)
 
         assert df.is_empty()
 
@@ -223,100 +224,37 @@ class TestDateUtilities:
         assert len(days) == 5
 
 
-@pytest.mark.integration
-class TestS3Operations:
-    """Integration tests for S3 operations (requires AWS credentials and S3_BUCKET env var)."""
+class TestSchemaLocking:
+    """Test that output schema is locked to prevent drift."""
 
-    @pytest.fixture
-    def s3_client(self):
-        """Create real S3 client from environment."""
-        import boto3
-        import os
+    def test_locked_column_output(self):
+        """Test that only expected columns are in final output."""
+        sample_prices = [
+            {
+                "date": "2024-09-15",
+                "open": 226.47,
+                "high": 228.77,
+                "low": 225.77,
+                "close": 228.03,
+                "volume": 48542700,
+                "extra_field": "should_be_ignored",  # Extra field from API
+            },
+        ]
 
-        # Skip if no credentials
-        if not os.getenv("S3_BUCKET"):
-            pytest.skip("S3_BUCKET not set - skipping integration test")
+        fetched_at = datetime.now(timezone.utc)
+        request_id = "test-request"
+        df = prices_to_polars("AAPL", sample_prices, fetched_at, request_id)
 
-        return boto3.client("s3")
+        # Expected locked columns (from ingest_fmp_prices.py)
+        expected_cols = {
+            "symbol", "as_of_date", "open", "high", "low", "close", "volume",
+            "fetched_at", "source", "endpoint", "request_id", "file_hash"
+        }
 
-    @pytest.fixture
-    def test_bucket(self):
-        """Get test bucket from environment."""
-        import os
-        bucket = os.getenv("S3_BUCKET")
-        if not bucket:
-            pytest.skip("S3_BUCKET not set - skipping integration test")
-        return bucket
+        actual_cols = set(df.columns)
 
-    def test_write_parquet_to_s3_success(self, s3_client, test_bucket):
-        """Test successful S3 write with real AWS."""
-        from ingest_local_to_s3 import write_parquet_to_s3, build_s3_key_daily
+        # Should have exactly the locked columns
+        assert actual_cols == expected_cols
 
-        # Create test DataFrame
-        df = pl.DataFrame({
-            "symbol": ["TEST", "TEST"],
-            "date": ["2024-09-15", "2024-09-15"],
-            "open": [100.0, 100.5],
-            "high": [105.0, 105.5],
-            "low": [99.0, 99.5],
-            "close": [102.0, 102.5],
-            "adjClose": [102.0, 102.5],
-            "volume": [1000000, 1000100],
-            "ingest_ts": [datetime.now(timezone.utc), datetime.now(timezone.utc)],
-        })
-
-        # Build S3 key
-        s3_key = build_s3_key_daily("TEST", "2024-09-15")
-
-        # Test write with force=True (overwrite if exists)
-        result = write_parquet_to_s3(
-            df=df,
-            s3_key=s3_key,
-            s3_client=s3_client,
-            bucket=test_bucket,
-            force=True
-        )
-
-        # Verify write succeeded
-        assert result is not None
-        assert "symbol=TEST" in result
-        assert "2024-09-15.parquet" in result
-
-        # Verify file exists in S3
-        s3_client.head_object(Bucket=test_bucket, Key=result)
-
-    def test_write_parquet_to_s3_skip_existing(self, s3_client, test_bucket):
-        """Test that existing files are skipped unless force=True."""
-        from ingest_local_to_s3 import write_parquet_to_s3, build_s3_key_daily
-
-        # Create test DataFrame
-        df = pl.DataFrame({
-            "symbol": ["TEST"],
-            "date": ["2024-09-15"],
-            "close": [102.0],
-            "volume": [1000000],
-            "ingest_ts": [datetime.now(timezone.utc)],
-        })
-
-        # Build S3 key
-        s3_key = build_s3_key_daily("TEST", "2024-09-15")
-
-        # First write
-        result1 = write_parquet_to_s3(
-            df=df,
-            s3_key=s3_key,
-            s3_client=s3_client,
-            bucket=test_bucket,
-            force=True
-        )
-        assert result1 is not None
-
-        # Second write without force should skip
-        result2 = write_parquet_to_s3(
-            df=df,
-            s3_key=s3_key,
-            s3_client=s3_client,
-            bucket=test_bucket,
-            force=False
-        )
-        assert result2 is None  # Skipped
+        # Should NOT have extra_field
+        assert "extra_field" not in df.columns
