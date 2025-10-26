@@ -80,15 +80,15 @@ jobs:
       run: |
         # Install the built wheel
         pip install dist/*.whl
-        
+
         # Simple smoke test without complex indentation
-        python -c "import bronze, silver, validation, stock_pipeline; print('✓ All modules imported'); print(f'✓ Version: {stock_pipeline.__version__}')"
+        python -c "import stock_pipeline; from stock_pipeline.scripts.ingest_fmp_prices import Config, FMPClient; print('✓ All modules imported'); print(f'✓ Version: {stock_pipeline.__version__}')"
 
     - name: Run comprehensive tests
       run: |
-        pip install pytest pytest-cov
+        pip install pytest pytest-asyncio pytest-cov
         # Full test suite with coverage
-        pytest -v --cov=bronze --cov=silver --cov=ingestion --cov=validation --cov-report=xml -m "not integration" --tb=short
+        pytest tests/ -v --cov=stock_pipeline --cov-report=xml -m "not integration" --tb=short
 
     - name: Upload coverage reports
       uses: codecov/codecov-action@v3
@@ -145,109 +145,3 @@ jobs:
           exit 1
         fi
 
-  # PySpark compatibility testing (separate job to run in parallel)
-  spark-compatibility:
-    name: PySpark Compatibility
-    runs-on: ubuntu-latest
-    timeout-minutes: 8  # Dedicated time for PySpark setup
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332  # v4.1.7
-      with:
-        fetch-depth: 0
-    
-    - name: Set up Python 3.11
-      uses: actions/setup-python@39cd14951b08e74b54015e9e001cdefcf80e669f  # v5.1.1
-      with:
-        python-version: "3.11"
-    
-    - name: Install Java (required for PySpark)
-      uses: actions/setup-java@2dfa2011c5b2a0f1489bf9e433881c92c1631f88  # v4.3.0
-      with:
-        java-version: '11'
-        distribution: 'temurin'
-    
-    - name: Cache PySpark installation
-      uses: actions/cache@v4
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
-    
-    - name: Install PySpark and package
-      run: |
-        pip install pyspark==3.5.0  # Match Databricks runtime
-        pip install -e .  # Install in editable mode
-    
-    - name: PySpark compatibility test
-      run: |
-        cat > spark_test.py << 'EOF'
-        import os
-        os.environ['PYSPARK_PYTHON'] = 'python'
-        
-        from pyspark.sql import SparkSession
-        import time
-        
-        print('🔥 Starting PySpark compatibility test...')
-        start_time = time.time()
-        
-        # Create Spark session
-        spark = SparkSession.builder \
-            .appName('StockPipelineCompatibilityTest') \
-            .master('local[2]') \
-            .config('spark.sql.adaptive.enabled', 'false') \
-            .config('spark.serializer', 'org.apache.spark.serializer.KryoSerializer') \
-            .getOrCreate()
-        
-        try:
-            print('✓ Spark session created')
-            
-            # Test module imports in Spark context
-            import bronze.ingestion.schemas as schemas
-            import silver.transformations.clean_data as clean_data
-            
-            # Create test DataFrame
-            test_data = [
-                ('AAPL', '2023-01-01', 150.0, 155.0, 148.0, 152.0, 1000000),
-                ('AAPL', '2023-01-01', 150.0, 155.0, 148.0, 152.0, 1000000),
-                ('MSFT', '2023-01-01', 250.0, 255.0, 248.0, 252.0, 800000),
-            ]
-            columns = ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume']
-            
-            df = spark.createDataFrame(test_data, columns)
-            print(f'✓ Created test DataFrame with {df.count()} rows')
-            
-            # Test deduplication if function exists
-            if hasattr(clean_data, 'remove_duplicates'):
-                cleaned_df = clean_data.remove_duplicates(df)
-                print(f'✓ Deduplication test: {df.count()} → {cleaned_df.count()} rows')
-            else:
-                print('ℹ️ remove_duplicates function not found, skipping test')
-            
-            # Performance check
-            test_time = time.time() - start_time
-            print(f'✓ PySpark test completed in {test_time:.1f}s')
-            
-            if test_time > 120:
-                print('⚠️ PySpark test took longer than expected')
-            
-            print('✅ PySpark compatibility test PASSED')
-            
-        except Exception as e:
-            print(f'❌ PySpark compatibility test FAILED: {e}')
-            import traceback
-            traceback.print_exc()
-            exit(1)
-            
-        finally:
-            spark.stop()
-        EOF
-        
-        python spark_test.py
-
-    - name: PySpark test summary
-      run: |
-        echo "✅ PySpark compatibility verified"
-        echo "🎯 Ready for Databricks deployment"

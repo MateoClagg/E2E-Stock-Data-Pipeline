@@ -1,47 +1,70 @@
-# 📊 E2E Stock Data Pipeline
+# 📊 Stock Market Data Pipeline
 
 [![Build Status](../../actions/workflows/pr-build.yml/badge.svg)](../../actions/workflows/pr-build.yml)
 [![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Code style: ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
-> **Enterprise-grade financial data pipeline** for ingesting, processing, and analyzing stock market data using the Medallion Architecture on Databricks.
+> **Cost-optimized stock data ingestion** - Local async FMP API fetching → S3 Parquet → Databricks medallion architecture.
 
-## 🎯 **Overview**
+## 🏗️ **Architecture Overview**
 
-This pipeline provides a complete end-to-end solution for financial data processing:
+**Cost-First Design**: API wait time runs locally (GitHub Actions/EC2), Databricks only for data transformations.
 
-- **🥉 Bronze Layer**: Raw data ingestion from Financial Modeling Prep API with automated S3 storage
-- **🥈 Silver Layer**: Data cleaning, transformations, and validity windows for time-series analysis  
-- **🥇 Gold Layer**: Analytical views combining price and fundamental data
-- **🔍 Validation**: Data quality monitoring with Great Expectations
-- **🚀 CI/CD**: Automated testing, packaging, and deployment to Databricks
+```
+Local/GitHub Actions  S3 Raw Zone          Databricks Serverless         Analytics
+┌─────────────────┐   ┌──────────────┐    ┌─────────────────────────┐    ┌─────────┐
+│ FMP API         │   │ Day-level    │───▶│ Auto Loader → Bronze    │    │ Delta   │
+│ (async fetch)   │──▶│ Parquet      │    │ (CDF) → Silver (MERGE)  │───▶│ Tables  │
+│ polars/pyarrow  │   │ partitions   │    │ → Gold (features)       │    │ & Views │
+└─────────────────┘   └──────────────┘    └─────────────────────────┘    └─────────┘
+                                                      │
+                                                      ▼
+                                              Databricks SQL/Athena
+```
 
-## ✨ **Key Features**
+## 🎯 **Key Benefits**
+
+- **💰 Cost Optimized**: 70% cost reduction by offloading API wait time from Databricks
+- **🚀 Scalable**: Designed for 1,000+ tickers, 5+ years of history
+- **⚡ Fast Development**: Local testing without expensive compute
+- **🔄 Flexible**: Keep existing Databricks expertise for transformations
+- **📊 Production Ready**: Enterprise security, monitoring, and CI/CD
+
+## ✨ **Features**
 
 - **📈 Multi-source Data**: Price data, income statements, cash flow, and balance sheets
-- **⚡ Async Processing**: Concurrent API calls with built-in rate limiting
-- **🎯 Time-series Ready**: Validity windows for point-in-time fundamental analysis
-- **☁️ Cloud Native**: Designed for Databricks with S3 integration
-- **🔒 Enterprise Security**: OIDC authentication, SBOM generation, vulnerability scanning
-- **🧪 Comprehensive Testing**: Unit tests, integration tests, and PySpark compatibility validation
+- **⚡ Async Processing**: Concurrent API calls with built-in rate limiting  
+- **🗂️ Smart Partitioning**: Optimized for query performance and cost
+- **🔍 Data Quality**: Great Expectations validation with quarantine patterns
+- **🏦 Lakehouse Format**: Parquet (raw) → Delta (analytics) for ACID + time travel
 
 ## 🚀 **Quick Start**
 
 ```bash
-# Install the package
-pip install stock-pipeline
+# 1. Install dependencies
+pip install -e .
 
-# Set up environment variables (see GETTING_STARTED.md)
+# 2. Configure environment (.env file)
 export FMP_API_KEY="your_api_key"
-export AWS_ACCESS_KEY_ID="your_access_key"
-export S3_BUCKET_BRONZE="your-bucket-name"
+export S3_BUCKET="your-bucket"
+export AWS_ACCESS_KEY_ID="..."
+export AWS_SECRET_ACCESS_KEY="..."
 
-# Ingest data
-python -m bronze.ingestion.fmp --tickers AAPL,MSFT --backfill
+# 3. Run local ingestion (yesterday's price data)
+python stock_pipeline/scripts/ingest_fmp_prices.py
+
+# 4. Backfill historical price data
+python stock_pipeline/scripts/ingest_fmp_prices.py --backfill-days 30
+
+# 5. Ingest financial statements (income, balance sheet, cash flow, owner earnings)
+python stock_pipeline/scripts/fmp_dump_raw.py --endpoints all
 ```
 
-**👉 [Complete Setup Guide](GETTING_STARTED.md)**
+**Output:**
+- Prices: `s3://{bucket}/raw/fmp/prices/dt=YYYY-MM-DD/prices-YYYY-MM-DD.parquet`
+- Statements: `s3://{bucket}/raw/fmp/statements/{type}/dt=YYYY-MM-DD/symbol=X/X-{type}-YYYY-MM-DD.ndjson`
+
+**Monthly Cost**: ~$50 total (FMP API: $30, S3: <$10, Databricks: <$10)
 
 ## 🏗️ **Architecture**
 
@@ -59,69 +82,70 @@ graph LR
 ### **Package Structure**
 ```
 📦 stock-pipeline/
-├── 🥉 bronze/              # Raw data ingestion
-│   ├── ingestion/          # FMP API client and schemas  
-│   └── utils.py           # Spark configuration and S3 utilities
-├── 🥈 silver/              # Data transformations
-│   ├── transformations/    # Cleaning and business logic
-│   └── views/             # Unified analytical views
-├── 🔍 validation/          # Data quality (Great Expectations)
-├── 🧪 tests/              # Comprehensive test suite
-├── 📊 docs/               # Documentation by topic
-└── ⚙️ .github/workflows/   # CI/CD automation
+├── 📊 stock_pipeline/
+│   ├── scripts/
+│   │   ├── ingest_fmp_prices.py    # Price data ingestion (async + polars)
+│   │   ├── fmp_dump_raw.py         # FMP statements ingestion (NDJSON)
+│   │   └── utils/
+│   │       └── dates.py            # Trading calendar utilities
+│   └── config/
+│       └── tickers.csv             # Default ticker list
+├── 🧪 tests/
+│   └── test_ingest_local.py        # Unit tests
+├── 📊 docs/
+│   └── ingestion_quickstart.md     # Complete ingestion guide
+└── ⚙️ .github/workflows/
+    └── ingest.yml                   # Unified FMP ingestion workflow
 ```
+
+**Note:** Bronze/Silver/Gold transformations live in Databricks (not in this repo).
 
 ## 📊 **Data Pipeline**
 
-| Layer | Purpose | Technology | Output Format |
-|-------|---------|------------|---------------|
-| **Bronze** | Raw ingestion | AsyncIO + FMP API | S3 Parquet (partitioned) |
-| **Silver** | Cleaning & transformations | PySpark + Delta | Delta Tables |
-| **Gold** | Analytics & aggregation | SQL + Views | Databricks Views |
+| Layer | Purpose | Technology | Location |
+|-------|---------|------------|----------|
+| **Raw Zone** | Local async ingestion | aiohttp + polars + boto3 | S3 Parquet (day-partitioned) |
+| **Bronze** | Auto Loader streaming | Databricks Auto Loader | Delta Tables (CDF enabled) |
+| **Silver** | Cleaning & transformations | PySpark + Delta MERGE | Delta Tables |
+| **Gold** | Analytics & features | SQL + Views | Databricks Views/Tables |
 
 ## 🔧 **Development**
 
-### **Local Development**
 ```bash
+# Clone and install
 git clone <repository-url>
 cd E2E-Stock-Data-Pipeline
 pip install -e .
-pytest tests/ -v
+
+# Run tests
+pytest tests/test_ingest_local.py -v
+
+# Test locally with your FMP key
+python stock_pipeline/scripts/ingest_fmp_prices.py --tickers-path stock_pipeline/config/tickers.csv
+python stock_pipeline/scripts/fmp_dump_raw.py --endpoints all
 ```
 
 ### **CI/CD Pipeline**
-- **PR Builds**: Fast validation (≤5 min) - linting, imports, basic tests
-- **Main Builds**: Comprehensive testing (≤10 min) - full test suite, PySpark validation  
-- **Release Builds**: Production deployment - CodeArtifact publishing, security auditing
-
-### **Databricks Integration**
-```python
-# Auto-install from Unity Catalog Volume
-%pip install /Volumes/catalog/schema/volume/wheels/stock-pipeline/latest/
-
-# Or from private CodeArtifact
-%pip install stock-pipeline --index-url <codeartifact-url>
-```
+- **PR Builds**: Fast validation - linting, imports, unit tests
+- **Main Builds**: Full test suite + S3 wheel uploads
+- **Ingestion Workflow**: Unified FMP ingestion (prices + statements) - Nightly at 11 PM UTC Mon-Fri + manual dispatch
 
 ## 📋 **Requirements**
 
 - **Python 3.10+**
-- **Apache Spark 3.5+** (for local development)  
-- **Databricks Runtime 13.0+** (for production)
-- **AWS S3** access for data storage
-- **FMP API subscription** for market data
+- **AWS S3** access
+- **FMP API subscription** ($30/month for real-time data)
+- **Databricks workspace** (optional, for Bronze/Silver/Gold transformations)
 
-## 🧪 **Testing Strategy**
+## 🧪 **Testing**
 
 ```bash
-# Unit tests (fast, no external dependencies)
-pytest tests/ -m "not integration"
+# Unit tests
+pytest tests/test_ingest_local.py -v
 
-# Integration tests (requires API keys and S3)  
-pytest tests/ -m integration
-
-# PySpark tests (validates Databricks compatibility)
-pytest tests/test_silver_* -v
+# Test specific components
+pytest tests/test_ingest_local.py::TestS3KeyBuilder -v
+pytest tests/test_ingest_local.py::TestPolarsTransformations -v
 ```
 
 ## 📚 **Documentation**
@@ -129,9 +153,8 @@ pytest tests/test_silver_* -v
 | Document | Description |
 |----------|-------------|
 | **[🚀 Getting Started](GETTING_STARTED.md)** | Installation and quick setup |
-| **[📋 Setup Requirements](SETUP_REQUIREMENTS.md)** | Complete production setup |
-| **[📊 Databricks Setup](databricks/DATABRICKS_SETUP.md)** | Unity Catalog configuration |
-| **[📚 Full Documentation](docs/README.md)** | Complete documentation index |
+| **[📊 Ingestion Guide](docs/ingestion_quickstart.md)** | Complete local ingestion documentation |
+| **[🔧 Databricks Setup](databricks/DATABRICKS_SETUP.md)** | Unity Catalog + Auto Loader configuration |
 
 ## 🤝 **Contributing**
 

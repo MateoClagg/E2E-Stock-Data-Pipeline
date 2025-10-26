@@ -134,14 +134,15 @@ cython_debug/
 ehthumbs.db
 Thumbs.db
 
-# Data files (keep some examples)
+# Data files (keep config examples)
 *.csv
 *.json
 *.parquet
 *.avro
 *.orc
-!bronze/tickers.csv
+!stock_pipeline/config/tickers.csv
 !validation/expectations_*.json
+!.env.example
 
 # Database files
 *.db
@@ -181,5 +182,9 @@ config
 # setuptools_scm version file
 stock_pipeline/_version.py
 
-# Personal documentation
-docs/personal/
+# Conda environments
+*.conda
+
+# Local test data
+test_data/
+sample_data/

@@ -1,0 +1,40 @@
+name: stock-pipeline
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  # Python version
+  - python=3.11
+
+  # API and HTTP
+  - aiohttp>=3.9.0
+  - python-dotenv>=1.0.0
+
+  # Data processing
+  - polars>=0.20.0
+  - pyarrow>=15.0.0
+
+  # AWS
+  - boto3>=1.34.0
+
+  # Retry logic
+  - tenacity>=8.2.0
+
+  # Trading calendar
+  - pandas>=2.0.0
+  - pandas-market-calendars>=4.3.0
+
+  # Data quality
+  - great-expectations>=0.18.0
+
+  # Development tools
+  - pytest>=7.0.0
+  - pytest-asyncio>=0.21.0
+  - pytest-cov>=4.0.0
+  - ruff>=0.1.0
+
+  # Pip-only packages (if any not in conda)
+  - pip
+  - pip:
+      # Add any pip-only packages here if needed

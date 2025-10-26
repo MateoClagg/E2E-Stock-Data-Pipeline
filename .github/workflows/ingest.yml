@@ -1,0 +1,199 @@
+name: FMP Data Ingestion
+
+on:
+  schedule:
+    # Run nightly at 11 PM UTC (after US market close + settlement)
+    - cron: '0 23 * * 1-5'  # Monday-Friday only
+
+  workflow_dispatch:
+    inputs:
+      tickers_path:
+        description: 'Path to tickers file (local or s3://...)'
+        required: false
+        default: 'stock_pipeline/config/tickers.csv'
+      from_date:
+        description: 'Start date (YYYY-MM-DD) for prices - optional'
+        required: false
+      to_date:
+        description: 'End date (YYYY-MM-DD) for prices - optional'
+        required: false
+      backfill_days:
+        description: 'Backfill N days for prices (overrides from/to dates)'
+        required: false
+      snapshot_date:
+        description: 'Snapshot date for statements (YYYY-MM-DD or "today")'
+        required: false
+        default: 'today'
+      endpoints:
+        description: 'FMP endpoints (comma-separated or "all")'
+        required: false
+        default: 'all'
+      force:
+        description: 'Overwrite existing S3 files'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: read
+  id-token: write  # Required for AWS OIDC authentication
+
+jobs:
+  ingest-prices:
+    name: Ingest FMP Price Data
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332  # v4.1.7
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@39cd14951b08e74b54015e9e001cdefcf80e669f  # v5.1.1
+      with:
+        python-version: '3.11'
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-ingest-${{ hashFiles('**/pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-ingest-
+          ${{ runner.os }}-pip-
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install aiohttp tenacity polars pyarrow boto3 python-dotenv pandas pandas-market-calendars
+
+    - name: Configure AWS credentials (OIDC)
+      uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502  # v4.0.2
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    - name: Verify AWS credentials
+      run: |
+        aws sts get-caller-identity
+        echo "✅ AWS credentials configured"
+
+    - name: Build ingestion arguments
+      id: args
+      run: |
+        ARGS="--tickers-path ${{ github.event.inputs.tickers_path || 'stock_pipeline/config/tickers.csv' }}"
+
+        if [ -n "${{ github.event.inputs.backfill_days }}" ]; then
+          ARGS="$ARGS --backfill-days ${{ github.event.inputs.backfill_days }}"
+        elif [ -n "${{ github.event.inputs.from_date }}" ] && [ -n "${{ github.event.inputs.to_date }}" ]; then
+          ARGS="$ARGS --from-date ${{ github.event.inputs.from_date }} --to-date ${{ github.event.inputs.to_date }}"
+        fi
+
+        if [ "${{ github.event.inputs.force }}" == "true" ]; then
+          ARGS="$ARGS --force"
+        fi
+
+        echo "args=$ARGS" >> $GITHUB_OUTPUT
+        echo "📋 Ingestion args: $ARGS"
+
+    - name: Run ingestion
+      env:
+        FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+        S3_BUCKET: ${{ vars.S3_BUCKET }}
+        S3_RAW_PREFIX: ${{ vars.S3_RAW_PREFIX || 'raw/fmp' }}
+        AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+        RATE_LIMIT_SECONDS: ${{ vars.RATE_LIMIT_SECONDS || '0.2' }}
+        MAX_WORKERS: ${{ vars.MAX_WORKERS || '10' }}
+      run: |
+        echo "🚀 Starting price data ingestion..."
+        python stock_pipeline/scripts/ingest_fmp_prices.py ${{ steps.args.outputs.args }}
+
+  ingest-statements:
+    name: Ingest FMP Statements Data
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: ingest-prices  # Run after prices complete
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332  # v4.1.7
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@39cd14951b08e74b54015e9e001cdefcf80e669f  # v5.1.1
+      with:
+        python-version: '3.11'
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-fmp-${{ hashFiles('**/pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-fmp-
+          ${{ runner.os }}-pip-
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install aiohttp tenacity boto3 python-dotenv
+
+    - name: Configure AWS credentials (OIDC)
+      uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502  # v4.0.2
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    - name: Verify AWS credentials
+      run: |
+        aws sts get-caller-identity
+        echo "✅ AWS credentials configured"
+
+    - name: Build ingestion arguments
+      id: args
+      run: |
+        ARGS="--symbols-file ${{ github.event.inputs.tickers_path || 'stock_pipeline/config/tickers.csv' }}"
+        ARGS="$ARGS --date ${{ github.event.inputs.snapshot_date || 'today' }}"
+        ARGS="$ARGS --endpoints ${{ github.event.inputs.endpoints || 'all' }}"
+
+        if [ "${{ github.event.inputs.force }}" == "true" ]; then
+          ARGS="$ARGS --force"
+        fi
+
+        echo "args=$ARGS" >> $GITHUB_OUTPUT
+        echo "📋 Ingestion args: $ARGS"
+
+    - name: Run FMP statements ingestion
+      env:
+        FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+        S3_BUCKET: ${{ vars.S3_BUCKET }}
+        S3_RAW_PREFIX: ${{ vars.S3_RAW_PREFIX || 'raw/fmp' }}
+        AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+        RATE_LIMIT_SECONDS: ${{ vars.RATE_LIMIT_SECONDS || '0.2' }}
+        MAX_WORKERS: ${{ vars.MAX_WORKERS || '10' }}
+      run: |
+        echo "🚀 Starting FMP statements ingestion..."
+        python stock_pipeline/scripts/fmp_dump_raw.py ${{ steps.args.outputs.args }}
+
+  workflow-summary:
+    name: Upload Workflow Summary
+    runs-on: ubuntu-latest
+    needs: [ingest-prices, ingest-statements]
+    if: always()
+
+    steps:
+    - name: Generate summary
+      run: |
+        echo "## FMP Data Ingestion Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Date:** $(date -u +"%Y-%m-%d %H:%M UTC")" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Price Data" >> $GITHUB_STEP_SUMMARY
+        echo "- **Tickers:** ${{ github.event.inputs.tickers_path || 'stock_pipeline/config/tickers.csv' }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **S3 Prefix:** raw/fmp/prices/" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Statements Data" >> $GITHUB_STEP_SUMMARY
+        echo "- **Snapshot Date:** ${{ github.event.inputs.snapshot_date || 'today' }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Endpoints:** ${{ github.event.inputs.endpoints || 'all' }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **S3 Prefix:** raw/fmp/statements/" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "✅ Ingestion completed. Check S3 for output files and metrics." >> $GITHUB_STEP_SUMMARY

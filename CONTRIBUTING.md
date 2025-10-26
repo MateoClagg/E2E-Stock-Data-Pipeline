@@ -6,14 +6,22 @@ Thank you for contributing to the E2E Stock Data Pipeline! This guide covers the
 
 ## 🔧 **Development Setup**
 
+**Option A: Conda (Recommended)**
 ```bash
-# After cloning, install development dependencies
-pip install -e .
-pip install pytest pytest-cov ruff
+# Create conda environment
+conda env create -f environment.yml
+conda activate stock-pipeline
+```
 
-# Set up pre-commit hooks (optional)
-pip install pre-commit
-pre-commit install
+**Option B: Pip**
+```bash
+# Install dependencies
+pip install -r requirements.txt
+# Or install as editable package
+pip install -e .
+
+# Install dev dependencies
+pip install pytest pytest-asyncio pytest-cov ruff
 ```
 
 ## 📝 **Code Standards**
@@ -26,9 +34,9 @@ pre-commit install
 ### **Commit Messages**
 Use [Conventional Commits](https://www.conventionalcommits.org/):
 ```
-feat(bronze): add support for crypto data ingestion
-fix(silver): resolve duplicate removal edge case  
-docs: update API examples
+feat(ingest): add support for additional FMP endpoints
+fix(validation): resolve polars schema validation edge case
+docs: update ingestion quickstart guide
 test: add integration tests for S3 uploads
 ```
 
@@ -37,13 +45,13 @@ test: add integration tests for S3 uploads
 ### **Test Types**
 ```bash
 # Unit tests (fast, no external deps)
-pytest tests/ -m "not integration"
+pytest tests/test_ingest_local.py -m "not integration"
 
-# Integration tests (require API keys)
-pytest tests/ -m integration  
+# Integration tests (require FMP API key + AWS)
+pytest tests/test_ingest_local.py --runlive
 
 # Full test suite with coverage
-pytest tests/ --cov=bronze --cov=silver --cov=validation
+pytest tests/ --cov=stock_pipeline --cov=validation --cov-report=html
 ```
 
 ### **Test Requirements**
@@ -71,18 +79,18 @@ async def test_fetch_stock_data_success():
 ## 🏗️ **Architecture Guidelines**
 
 ### **Adding New Data Sources**
-1. **Bronze layer**: Create client in `bronze/ingestion/`
-2. **Schemas**: Define in `bronze/ingestion/schemas.py`
-3. **Silver layer**: Add transformations in `silver/transformations/`
-4. **Views**: Update `silver/views/unified_views.py`
-5. **Validation**: Add rules in `validation/expectations_*.json`
+1. **Ingestion**: Update `stock_pipeline/scripts/ingest_local_to_s3.py`
+2. **S3 Layout**: Define partitioning strategy in `build_s3_key_for_day()`
+3. **Validation**: Add Great Expectations rules in `validation/expectations_*.json`
+4. **Databricks**: Update Auto Loader config to ingest new data types
+5. **Transformations**: Bronze/Silver/Gold transformations live in Databricks (not this repo)
 
 ### **Performance Considerations**
-- Use **async/await** for I/O operations
-- Implement **rate limiting** for external APIs
-- **Partition data** by symbol and date in S3
-- Use **PySpark** for large transformations
-- Configure **memory settings** appropriately
+- Use **async/await** for I/O operations (aiohttp)
+- Implement **rate limiting** for external APIs (tenacity + custom RateLimiter)
+- **Partition data** by symbol/year/month/day in S3
+- Use **Polars** for local data transformations (faster than pandas)
+- Validate data before writing to S3 (fail fast)
 
 ### **Error Handling**
 ```python
@@ -120,23 +128,25 @@ pytest tests/test_silver_* -v  # PySpark tests
 
 ## 📊 **Data Pipeline Best Practices**
 
-### **Bronze Layer (Raw Ingestion)**
-- Store **all raw data** without transformation
-- Use **strict schemas** for validation
-- Include **lineage metadata** (run_id, ingested_at)
-- **Partition by symbol and date** for query performance
+### **Local Ingestion (Raw Zone)**
+- **Async fetching**: Use aiohttp for concurrent API calls
+- **Rate limiting**: Respect FMP API limits (12-15s between batches)
+- **Idempotency**: Skip existing day files unless `--force`
+- **Validation**: Filter invalid data before writing to S3
+- **Partitioning**: Day-level partitions for efficient Auto Loader ingestion
+- **Metrics**: Emit run metrics to S3 logs for monitoring
 
-### **Silver Layer (Cleaned Data)**
-- Apply **data quality rules**
-- Create **validity windows** for time-series joins
-- Use **Delta Lake** for ACID transactions
-- **Deduplicate** and handle missing values
+### **Data Quality (Validation Layer)**
+- Use **Great Expectations** for schema validation
+- Define **column expectations** (non-null, min/max, data types)
+- **Version control** expectation suites in `validation/`
+- Apply validations **before** writing to S3 (fail fast)
 
-### **Validation Layer**
-- Use **Great Expectations** for data quality
-- Define **statistical expectations** (min/max/distribution)
-- **Alert on anomalies** in production
-- **Version control** expectation suites
+### **Databricks Integration**
+- **Bronze layer**: Auto Loader streams from S3 raw zone
+- **Silver layer**: MERGE operations for deduplication
+- **Gold layer**: Feature engineering and aggregations
+- All Spark transformations live in Databricks (not this repo)
 
 ## 🐛 **Debugging Tips**
 
