@@ -74,10 +74,10 @@ jobs:
         import sys
         try:
             import stock_pipeline
-            from stock_pipeline.scripts.ingest_local_to_s3 import build_s3_key_for_day
+            from stock_pipeline.scripts.ingest_fmp_prices import build_s3_key_daily
             print('✓ All modules imported successfully')
             print(f'✓ Version: {stock_pipeline.__version__}')
-            print(f'✓ Smoke test: {build_s3_key_for_day(\"AAPL\", \"2024-09-30\")}')
+            print(f'✓ Smoke test: {build_s3_key_daily(\"2024-09-30\")}')
         except ImportError as e:
             print(f'✗ Import failed: {e}')
             sys.exit(1)
@@ -87,7 +87,7 @@ jobs:
       run: |
         pip install pytest pytest-asyncio
         # Only unit tests, no integration, timeout after 60s
-        timeout 60s pytest tests/test_ingest_local.py -x -q --tb=short -m "not integration" || echo "Some tests failed (non-blocking for PR)"
+        timeout 60s pytest tests/ -x -q --tb=short -m "not integration" || echo "Some tests failed (non-blocking for PR)"
       continue-on-error: true
 
     - name: Upload PR artifact

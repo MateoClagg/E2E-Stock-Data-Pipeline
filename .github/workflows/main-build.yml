@@ -82,13 +82,13 @@ jobs:
         pip install dist/*.whl
 
         # Simple smoke test without complex indentation
-        python -c "import stock_pipeline; from stock_pipeline.scripts.ingest_local_to_s3 import Config, FMPClient; print('✓ All modules imported'); print(f'✓ Version: {stock_pipeline.__version__}')"
+        python -c "import stock_pipeline; from stock_pipeline.scripts.ingest_fmp_prices import Config, FMPClient; print('✓ All modules imported'); print(f'✓ Version: {stock_pipeline.__version__}')"
 
     - name: Run comprehensive tests
       run: |
         pip install pytest pytest-asyncio pytest-cov
         # Full test suite with coverage
-        pytest tests/test_ingest_local.py -v --cov=stock_pipeline --cov-report=xml -m "not integration" --tb=short
+        pytest tests/ -v --cov=stock_pipeline --cov-report=xml -m "not integration" --tb=short
 
     - name: Upload coverage reports
       uses: codecov/codecov-action@v3
