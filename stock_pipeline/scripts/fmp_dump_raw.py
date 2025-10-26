@@ -16,7 +16,7 @@ Usage:
 
 S3 Layout:
   Treasury: raw/fmp/treasury_rates/dt=YYYY-MM-DD/treasury-rates-YYYY-MM-DD.ndjson.gz
-  Statements: raw/fmp/statements/{type}/dt=YYYY-MM-DD/symbol={SYM}/{SYM}-{type}-YYYY-MM-DD.ndjson.gz
+  Statements: raw/fmp/statements/{type}/symbol={SYM}/{SYM}-{type}.ndjson.gz (overwrites daily)
 """
 
 import argparse
@@ -76,25 +76,25 @@ ENDPOINTS = {
         "url_template": "https://financialmodelingprep.com/stable/owner-earnings",
         "params": {"symbol": "{symbol}", "limit": 5},
         "per_symbol": True,
-        "s3_path": "raw/fmp/owner_earnings/dt={date}/symbol={symbol}/{symbol}-owner-earnings-{date}.ndjson.gz",
+        "s3_path": "raw/fmp/owner_earnings/symbol={symbol}/{symbol}-owner-earnings.ndjson.gz",
     },
     "income": {
         "url_template": "https://financialmodelingprep.com/api/v3/income-statement/{symbol}",
         "params": {"period": "annual", "limit": 5},
         "per_symbol": True,
-        "s3_path": "raw/fmp/statements/income/dt={date}/symbol={symbol}/{symbol}-income-{date}.ndjson.gz",
+        "s3_path": "raw/fmp/statements/income/symbol={symbol}/{symbol}-income.ndjson.gz",
     },
     "balance_sheet": {
         "url_template": "https://financialmodelingprep.com/api/v3/balance-sheet-statement/{symbol}",
         "params": {"period": "annual", "limit": 5},
         "per_symbol": True,
-        "s3_path": "raw/fmp/statements/balance_sheet/dt={date}/symbol={symbol}/{symbol}-balance-{date}.ndjson.gz",
+        "s3_path": "raw/fmp/statements/balance_sheet/symbol={symbol}/{symbol}-balance.ndjson.gz",
     },
     "cash_flow": {
         "url_template": "https://financialmodelingprep.com/api/v3/cash-flow-statement/{symbol}",
         "params": {"period": "annual", "limit": 5},
         "per_symbol": True,
-        "s3_path": "raw/fmp/statements/cash_flow/dt={date}/symbol={symbol}/{symbol}-cashflow-{date}.ndjson.gz",
+        "s3_path": "raw/fmp/statements/cash_flow/symbol={symbol}/{symbol}-cashflow.ndjson.gz",
     },
     "treasury_rates": {
         "url_template": "https://financialmodelingprep.com/stable/treasury-rates",
