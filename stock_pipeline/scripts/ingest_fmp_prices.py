@@ -44,6 +44,12 @@ from tenacity import (
     wait_random,
 )
 
+# Import trading day utilities
+from stock_pipeline.scripts.utils.dates import (
+    get_previous_trading_day,
+    is_trading_day,
+)
+
 # Load environment variables
 load_dotenv()
 
@@ -474,16 +480,16 @@ async def main():
     )
     parser.add_argument(
         "--from-date",
-        help="Start date YYYY-MM-DD (default: yesterday)",
+        help="Start date YYYY-MM-DD (default: previous trading day)",
     )
     parser.add_argument(
         "--to-date",
-        help="End date YYYY-MM-DD (default: yesterday)",
+        help="End date YYYY-MM-DD (default: previous trading day)",
     )
     parser.add_argument(
         "--backfill-days",
         type=int,
-        help="Backfill N days from today (overrides --from-date)",
+        help="Backfill N calendar days from today (overrides --from-date)",
     )
     parser.add_argument(
         "--force",
@@ -504,9 +510,16 @@ async def main():
         from_date = args.from_date
         to_date = args.to_date
     else:
-        # Default: yesterday only
-        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-        from_date = to_date = yesterday
+        # Default: today if trading day, else previous trading day
+        # (assumes script runs after market close)
+        today = datetime.now().strftime("%Y-%m-%d")
+        if is_trading_day(today):
+            from_date = to_date = today
+            log.info(f"📅 Using today (trading day): {today}")
+        else:
+            prev_trading_day = get_previous_trading_day()
+            from_date = to_date = prev_trading_day
+            log.info(f"📅 Using previous trading day (today is weekend/holiday): {prev_trading_day}")
 
     log.info(f"📅 Date range: {from_date} to {to_date}")
     log.info(f"📂 S3 prefix: s3://{Config.S3_BUCKET}/{Config.S3_RAW_PREFIX}/prices/")
