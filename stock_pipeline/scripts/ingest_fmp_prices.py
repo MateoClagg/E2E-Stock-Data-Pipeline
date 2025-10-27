@@ -255,7 +255,7 @@ def prices_to_polars(
             # Parse date string to DATE type
             pl.col("date").str.strptime(pl.Date, "%Y-%m-%d", strict=False).alias("as_of_date"),
             # Parse fetched_at to TIMESTAMP (ISO format with timezone)
-            pl.col("fetched_at").str.strptime(pl.Datetime, "%Y-%m-%dT%H:%M:%S.%f%z", strict=False).dt.replace_time_zone(None),
+            pl.col("fetched_at").str.strptime(pl.Datetime, "%Y-%m-%dT%H:%M:%S%.f%z", strict=False).dt.replace_time_zone(None),
             # Cast price/volume columns
             pl.col("open").cast(pl.Float64),
             pl.col("high").cast(pl.Float64),
@@ -378,7 +378,6 @@ def write_parquet_to_s3(
             }
         )
 
-        log.info(f"✓ Wrote {s3_key}")
         return s3_key
     finally:
         Path(tmp_path).unlink(missing_ok=True)
@@ -457,15 +456,18 @@ def load_tickers(tickers_path: str) -> List[str]:
         s3_client = boto3.client("s3", region_name=Config.AWS_REGION)
         obj = s3_client.get_object(Bucket=bucket, Key=key)
         content = obj["Body"].read().decode("utf-8")
-
-        tickers = [line.strip().upper() for line in content.splitlines() if line.strip()]
     else:
         # Local file
         with open(tickers_path, "r") as f:
             content = f.read()
-        tickers = [line.strip().upper() for line in content.splitlines() if line.strip()]
 
-    return tickers
+    # Parse lines and skip header if present
+    lines = [line.strip().upper() for line in content.splitlines() if line.strip()]
+    # Skip first line if it's a header (contains 'symbol' or 'ticker')
+    if lines and lines[0].lower() in ['symbol', 'ticker']:
+        lines = lines[1:]
+
+    return lines
 
 
 async def main():

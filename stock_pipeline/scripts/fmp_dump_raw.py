@@ -562,8 +562,13 @@ def load_symbols(symbols_file: str) -> List[str]:
         with open(symbols_file, "r") as f:
             content = f.read()
 
-    symbols = [line.strip().upper() for line in content.splitlines() if line.strip()]
-    return symbols
+    # Parse lines and skip header if present
+    lines = [line.strip().upper() for line in content.splitlines() if line.strip()]
+    # Skip first line if it's a header (contains 'symbol' or 'ticker')
+    if lines and lines[0].lower() in ['symbol', 'ticker']:
+        lines = lines[1:]
+
+    return lines
 
 
 async def main():
