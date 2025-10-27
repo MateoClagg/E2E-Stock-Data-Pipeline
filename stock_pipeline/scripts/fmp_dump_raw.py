@@ -41,6 +41,13 @@ from tenacity import (
     wait_exponential,
 )
 
+# Import trading day utilities
+from stock_pipeline.scripts.utils.dates import (
+    get_previous_trading_day,
+    get_trading_days,
+    is_trading_day,
+)
+
 load_dotenv()
 
 
@@ -604,7 +611,15 @@ async def main():
 
     # Parse date and backfill range
     if args.date == "today":
-        as_of_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        # Use today if trading day, else previous trading day
+        # (assumes script runs after market close)
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        if is_trading_day(today):
+            as_of_date = today
+            print(f"📅 Using today (trading day) for snapshot: {as_of_date}")
+        else:
+            as_of_date = get_previous_trading_day()
+            print(f"📅 Using previous trading day for snapshot (today is weekend/holiday): {as_of_date}")
     else:
         as_of_date = args.date
 
