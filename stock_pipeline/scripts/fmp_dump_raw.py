@@ -393,6 +393,11 @@ async def ingest_endpoint_market_wide(
         url = endpoint_config["url_template"]
         params = endpoint_config["params"].copy()
 
+        # For treasury rates, add date filter to get specific day only
+        if endpoint == "treasury_rates":
+            params["from"] = as_of_date
+            params["to"] = as_of_date
+
         # Fetch data
         request_id = str(uuid.uuid4())
         fetched_at = datetime.now(timezone.utc)

@@ -163,7 +163,7 @@ jobs:
         fi
         ARGS="--symbols-file ${SYMBOLS_FILE}"
         ARGS="$ARGS --date ${{ github.event.inputs.snapshot_date || 'today' }}"
-        ARGS="$ARGS --endpoints ${{ github.event.inputs.endpoints || 'all' }}"
+        ARGS="$ARGS --endpoints ${{ github.event.inputs.endpoints || 'treasury_rates' }}"
 
         if [ "${{ github.event.inputs.force }}" == "true" ]; then
           ARGS="$ARGS --force"
