@@ -3,6 +3,7 @@ name: FMP Data Ingestion
 on:
   schedule:
     # Run nightly at 11 PM UTC (after US market close + settlement)
+    # Default: prices + treasury rates only (cost-optimized for daily runs)
     - cron: '0 23 * * 1-5'  # Monday-Friday only
 
   workflow_dispatch:
@@ -27,7 +28,7 @@ on:
       endpoints:
         description: 'FMP endpoints (comma-separated or "all")'
         required: false
-        default: 'all'
+        default: 'treasury_rates'
       force:
         description: 'Overwrite existing S3 files'
         required: false
