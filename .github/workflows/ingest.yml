@@ -81,7 +81,11 @@ jobs:
     - name: Build ingestion arguments
       id: args
       run: |
-        ARGS="--tickers-path ${{ github.event.inputs.tickers_path || '$GITHUB_WORKSPACE/stock_pipeline/config/tickers.csv' }}"
+        TICKERS_PATH="${{ github.event.inputs.tickers_path }}"
+        if [ -z "$TICKERS_PATH" ]; then
+          TICKERS_PATH="${GITHUB_WORKSPACE}/stock_pipeline/config/tickers.csv"
+        fi
+        ARGS="--tickers-path ${TICKERS_PATH}"
 
         if [ -n "${{ github.event.inputs.backfill_days }}" ]; then
           ARGS="$ARGS --backfill-days ${{ github.event.inputs.backfill_days }}"
@@ -152,7 +156,11 @@ jobs:
     - name: Build ingestion arguments
       id: args
       run: |
-        ARGS="--symbols-file ${{ github.event.inputs.tickers_path || '$GITHUB_WORKSPACE/stock_pipeline/config/tickers.csv' }}"
+        SYMBOLS_FILE="${{ github.event.inputs.tickers_path }}"
+        if [ -z "$SYMBOLS_FILE" ]; then
+          SYMBOLS_FILE="${GITHUB_WORKSPACE}/stock_pipeline/config/tickers.csv"
+        fi
+        ARGS="--symbols-file ${SYMBOLS_FILE}"
         ARGS="$ARGS --date ${{ github.event.inputs.snapshot_date || 'today' }}"
         ARGS="$ARGS --endpoints ${{ github.event.inputs.endpoints || 'all' }}"
 
