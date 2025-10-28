@@ -524,7 +524,7 @@ async def main():
             log.info(f"📅 Using previous trading day (today is weekend/holiday): {prev_trading_day}")
 
     log.info(f"📅 Date range: {from_date} to {to_date}")
-    log.info(f"📂 S3 prefix: s3://{Config.S3_BUCKET}/{Config.S3_RAW_PREFIX}/prices/")
+    log.info(f"📂 S3 prefix: s3://{Config.S3_BUCKET}/raw/prices/")
 
     # Load tickers
     tickers = load_tickers(args.tickers_path)
@@ -561,7 +561,7 @@ async def main():
         files_written = []
 
         for trade_date, day_df in day_groups.items():
-            s3_key = build_s3_key_daily(trade_date, prefix=Config.S3_RAW_PREFIX + "/prices")
+            s3_key = build_s3_key_daily(trade_date, prefix="raw/prices")
             result_key = write_parquet_to_s3(day_df, s3_key, s3_client, Config.S3_BUCKET, args.force)
             if result_key:
                 files_written.append(result_key)
@@ -587,7 +587,7 @@ async def main():
         "rows_written": total_rows,
         "errors": total_errors,
         "duration_seconds": round(elapsed_time, 2),
-        "s3_prefix": f"s3://{Config.S3_BUCKET}/{Config.S3_RAW_PREFIX}/prices/",
+        "s3_prefix": f"s3://{Config.S3_BUCKET}/raw/prices/",
         "symbol_results": results,
     }
 
@@ -612,7 +612,7 @@ async def main():
     print(f"📝 Rows written: {total_rows:,}")
     print(f"❌ Errors: {total_errors}")
     print(f"⏱️  Duration: {elapsed_time:.1f}s")
-    print(f"📂 S3 Prefix: s3://{Config.S3_BUCKET}/{Config.S3_RAW_PREFIX}/prices/")
+    print(f"📂 S3 Prefix: s3://{Config.S3_BUCKET}/raw/prices/")
     print(f"📋 Metrics: s3://{Config.S3_BUCKET}/{metrics_key}")
     print("="*60)
 

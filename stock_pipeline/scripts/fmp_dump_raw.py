@@ -359,7 +359,8 @@ async def ingest_endpoint_symbol(
             "endpoint": endpoint,
             "files_written": 1 if written else 0,
             "records_written": len(records) if written else 0,
-            "errors": [] if written else ["File exists (use --force)"],
+            "skipped": not written,
+            "errors": [],
         }
 
     except Exception as e:
@@ -429,7 +430,8 @@ async def ingest_endpoint_market_wide(
             "endpoint": endpoint,
             "files_written": 1 if written else 0,
             "records_written": len(records) if written else 0,
-            "errors": [] if written else ["File exists (use --force)"],
+            "skipped": not written,
+            "errors": [],
         }
 
     except Exception as e:
@@ -526,7 +528,8 @@ async def ingest_treasury_rates_backfill(
                 "date": date_str,
                 "files_written": 1 if written else 0,
                 "records_written": len(records) if written else 0,
-                "errors": [] if written else ["File exists (use --force)"],
+                "skipped": not written,
+                "errors": [],
             }
 
         # Parallelize S3 writes
@@ -716,6 +719,7 @@ async def main():
     # Calculate metrics
     total_files = sum(r.get("files_written", 0) for r in all_results)
     total_records = sum(r.get("records_written", 0) for r in all_results)
+    total_skipped = sum(1 for r in all_results if r.get("skipped"))
     total_errors = sum(1 for r in all_results if r.get("errors"))
 
     # Write metrics
@@ -747,6 +751,7 @@ async def main():
     print("✅ FMP Raw Ingestion Complete")
     print("="*60)
     print(f"📁 Files written: {total_files}")
+    print(f"⏭️  Files skipped: {total_skipped}")
     print(f"📝 Records written: {total_records:,}")
     print(f"❌ Errors: {total_errors}")
     print(f"⏱️  Duration: {elapsed_time:.1f}s")
